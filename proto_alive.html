@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>살아 움직이는 캐릭터 시안</title>
+  <script type="importmap">
+  { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+  </script>
+  <style>
+    *{box-sizing:border-box;}
+    body{margin:0;padding:22px;background:radial-gradient(1100px 600px at 50% -10%,#1b2a52,#0c1430 60%);
+      color:#eaf0ff;font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;}
+    h1{font-size:21px;margin:0 0 6px;} .sub{color:#9fb3e0;font-size:13.5px;margin:0 0 18px;line-height:1.6;}
+    .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));}
+    .card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:14px;}
+    .ttl{font-size:15px;font-weight:700;margin:0 0 2px;} .ttl .n{color:#ffd45e;}
+    .frame{aspect-ratio:1/1;border-radius:12px;overflow:hidden;background:#1a2748;margin:10px 0 8px;}
+    .frame canvas{width:100%;height:100%;display:block;}
+    .desc{font-size:12.5px;color:#aab9e0;line-height:1.55;margin:0;}
+    .good{color:#7fe0a0;} .bad{color:#ff9a8a;}
+  </style>
+</head>
+<body>
+  <h1>🎬 살아 움직이는 캐릭터 — 두 가지 방식</h1>
+  <p class="sub">둘 다 가만히 둥둥 뜨는 게 아니라 <b>부위가 따로 움직입니다</b>. 잠깐 보세요(숨쉬기·입·귀·팔·발·꼬리).</p>
+  <div class="grid">
+    <div class="card">
+      <div class="ttl"><span class="n">A</span> 절차적 3D · 풀 리깅</div>
+      <div class="frame"><canvas id="cA"></canvas></div>
+      <p class="desc"><span class="good">입 벌리기·귀 쫑긋·팔 흔들·발 동동·꼬리 살랑·숨쉬기·눈 깜빡</span> 전부 작동. <span class="bad">외형은 스타일라이즈드</span>.</p>
+    </div>
+    <div class="card">
+      <div class="ttl"><span class="n">B</span> 진짜 이미지 · 메시 리깅(러프)</div>
+      <div class="frame"><canvas id="cB"></canvas></div>
+      <p class="desc"><span class="good">진짜 모습 그대로</span> 숨쉬고 귀·꼬리가 살랑임. <span class="bad">부위별 정밀 리깅은 캐릭터마다 수작업</span>(지금은 러프 데모).</p>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    const ART=(d)=>`https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/${d}.png`;
+
+    function base(canvas,bg){
+      const w=canvas.clientWidth||300,h=canvas.clientHeight||300;
+      const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));renderer.setSize(w,h,false);
+      renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+      const scene=new THREE.Scene();scene.background=new THREE.Color(bg||'#1a2748');
+      const cam=new THREE.PerspectiveCamera(42,w/h,0.1,100);
+      scene.add(new THREE.HemisphereLight(0xdfeaff,0x33406a,1.05));
+      const dir=new THREE.DirectionalLight(0xffffff,1.7);dir.position.set(3,7,5);dir.castShadow=true;
+      dir.shadow.mapSize.set(1024,1024);dir.shadow.camera.near=1;dir.shadow.camera.far=24;
+      dir.shadow.camera.left=-6;dir.shadow.camera.right=6;dir.shadow.camera.top=6;dir.shadow.camera.bottom=-6;scene.add(dir);
+      return {renderer,scene,cam};
+    }
+
+    // ============ A. 절차적 3D 피카츄 (풀 리깅) ============
+    buildProcedural(document.getElementById('cA'));
+    function pivot(parent,x,y,z){const g=new THREE.Group();g.position.set(x,y,z);parent.add(g);return g;}
+    function boltTail(){
+      const shape=new THREE.Shape();
+      const pts=[[0,0],[0.5,0.1],[0.25,0.55],[0.7,0.6],[0.2,1.5],[0.42,0.85],[0.0,0.8]];
+      shape.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)shape.lineTo(pts[i][0],pts[i][1]);shape.closePath();
+      const geo=new THREE.ExtrudeGeometry(shape,{depth:0.16,bevelEnabled:true,bevelThickness:0.04,bevelSize:0.04,bevelSegments:2});
+      geo.center();
+      return geo;
+    }
+    function buildProcedural(canvas){
+      const {renderer,scene,cam}=base(canvas);
+      cam.position.set(0.4,2.0,7.2);cam.lookAt(0,1.25,0);
+      const C={body:'#f8d030',belly:'#f8e090',ear:'#f8d030',tip:'#2b2b2b',accent:'#d03030',brown:'#9a6b2f'};
+      const bodyMat=new THREE.MeshStandardMaterial({color:C.body,roughness:0.55});
+      const root=new THREE.Group();scene.add(root);
+      const bodyG=new THREE.Group();root.add(bodyG);
+      const body=new THREE.Mesh(new THREE.SphereGeometry(0.95,32,24),bodyMat);body.scale.set(1,1.1,0.95);body.position.y=1.25;body.castShadow=true;bodyG.add(body);
+      const belly=new THREE.Mesh(new THREE.SphereGeometry(0.66,24,18),new THREE.MeshStandardMaterial({color:C.belly,roughness:0.6}));belly.scale.set(0.85,1,0.5);belly.position.set(0,1.15,0.66);bodyG.add(belly);
+      // 눈
+      const eyes=[];for(const sx of [-0.34,0.34]){const w=new THREE.Mesh(new THREE.SphereGeometry(0.21,18,14),new THREE.MeshStandardMaterial({color:0x16181f}));w.scale.set(1,1.25,0.6);w.position.set(sx,1.55,0.74);bodyG.add(w);const s=new THREE.Mesh(new THREE.SphereGeometry(0.05,8,8),new THREE.MeshBasicMaterial({color:0xffffff}));s.position.set(sx+0.05,1.62,0.86);bodyG.add(s);eyes.push(w);}
+      // 볼터치
+      for(const sx of [-0.62,0.62]){const c=new THREE.Mesh(new THREE.CircleGeometry(0.17,16),new THREE.MeshBasicMaterial({color:0xff5060}));c.position.set(sx,1.25,0.74);c.lookAt(sx*2,1.25,3);bodyG.add(c);}
+      // 입(벌어짐)
+      const mouth=new THREE.Mesh(new THREE.SphereGeometry(0.12,16,12),new THREE.MeshBasicMaterial({color:0x7a2230}));mouth.scale.set(1.1,0.6,0.5);mouth.position.set(0,1.18,0.82);bodyG.add(mouth);
+      // 귀(피벗)
+      const ears=[];for(const sx of [-0.42,0.42]){const pv=pivot(bodyG,sx,1.95,0);const ear=new THREE.Mesh(new THREE.ConeGeometry(0.17,0.95,5),bodyMat);ear.position.y=0.45;ear.castShadow=true;pv.add(ear);const tip=new THREE.Mesh(new THREE.ConeGeometry(0.14,0.34,5),new THREE.MeshStandardMaterial({color:C.tip}));tip.position.y=0.86;pv.add(tip);pv.rotation.z=sx>0?-0.18:0.18;ears.push({pv,sign:Math.sign(sx)});}
+      // 팔(피벗)
+      const arms=[];for(const sx of [-0.92,0.92]){const pv=pivot(bodyG,sx,1.28,0.1);const arm=new THREE.Mesh(new THREE.SphereGeometry(0.24,16,12),bodyMat);arm.scale.set(0.8,1.2,0.8);arm.position.y=-0.2;pv.add(arm);arms.push({pv,sign:Math.sign(sx)});}
+      // 발(피벗)
+      const feet=[];for(const sx of [-0.4,0.4]){const pv=pivot(root,sx,0.3,0.2);const f=new THREE.Mesh(new THREE.SphereGeometry(0.3,16,12),bodyMat);f.scale.set(1,0.7,1.3);f.castShadow=true;pv.add(f);feet.push({pv,sign:Math.sign(sx)});}
+      // 꼬리(피벗)
+      const tailPv=pivot(bodyG,0.55,0.95,-0.55);const tail=new THREE.Mesh(boltTail(),new THREE.MeshStandardMaterial({color:C.body,roughness:0.5}));tail.scale.setScalar(0.95);tail.position.set(0.3,0.5,0);tailPv.add(tail);
+      const tbase=new THREE.Mesh(new THREE.BoxGeometry(0.4,0.3,0.18),new THREE.MeshStandardMaterial({color:C.brown}));tbase.position.set(0.05,0.05,0);tailPv.add(tbase);
+      // 바닥
+      const ground=new THREE.Mesh(new THREE.CircleGeometry(4,48),new THREE.MeshStandardMaterial({color:0x1c2b50,roughness:1}));ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
+
+      let t=0,blink=0,nextBlink=2;
+      (function loop(){
+        requestAnimationFrame(loop);t+=0.016;
+        root.position.y=Math.abs(Math.sin(t*2.4))*0.07;
+        const br=Math.sin(t*3);
+        body.scale.set(1-br*0.03,1.1+br*0.05,0.95-br*0.03);
+        mouth.scale.y=0.35+(Math.sin(t*3)*0.5+0.5)*0.7;
+        for(const e of ears){e.pv.rotation.z=(e.sign>0?-0.18:0.18)+Math.sin(t*5+e.sign)*0.14;e.pv.rotation.x=Math.sin(t*3.3)*0.06;}
+        for(const a of arms){a.pv.rotation.z=(a.sign>0?-0.4:0.4)+Math.sin(t*4)*0.5*a.sign;}
+        feet[0].pv.position.y=0.3+Math.max(0,Math.sin(t*4))*0.06;
+        feet[1].pv.position.y=0.3+Math.max(0,Math.sin(t*4+Math.PI))*0.06;
+        tailPv.rotation.z=-0.2+Math.sin(t*2.2)*0.4;tailPv.rotation.x=Math.sin(t*1.7)*0.18;
+        blink-=0.016;if(blink<-0.12){nextBlink-=0.016;if(nextBlink<=0){blink=0.12;nextBlink=2+Math.random()*3;}}
+        const es=blink>0?0.12:1;for(const ey of eyes)ey.scale.y=ey.scale.y*0.5+1.25*es*0.5;
+        renderer.render(scene,cam);
+      })();
+    }
+
+    // ============ B. 진짜 이미지 메시 리깅 ============
+    const img=new Image();img.crossOrigin='anonymous';
+    img.onload=()=>buildMeshRig(document.getElementById('cB'),img);
+    img.onerror=()=>document.getElementById('cB').parentElement.innerHTML='<p style="color:#889;font-size:12px;padding:20px">이미지 로드 실패</p>';
+    img.src=ART(25);
+    function buildMeshRig(canvas,image){
+      const {renderer,scene,cam}=base(canvas);
+      cam.position.set(0,0,5.0);cam.lookAt(0,0,0);
+      const tex=new THREE.Texture(image);tex.colorSpace=THREE.SRGBColorSpace;tex.needsUpdate=true;
+      const aspect=(image.naturalWidth/image.naturalHeight)||1;
+      const PW=3.0,PH=PW/aspect;
+      const geo=new THREE.PlaneGeometry(PW,PH,28,36);
+      const mat=new THREE.MeshBasicMaterial({map:tex,transparent:true,alphaTest:0.5,side:THREE.DoubleSide});
+      const mesh=new THREE.Mesh(geo,mat);scene.add(mesh);
+      const pos=geo.attributes.position,uv=geo.attributes.uv;
+      const base0=new Float32Array(pos.array);
+      // 부드러운 그림자
+      const sc=document.createElement('canvas');sc.width=sc.height=128;const sx2=sc.getContext('2d');
+      const g=sx2.createRadialGradient(64,64,0,64,64,64);g.addColorStop(0,'rgba(0,0,0,0.5)');g.addColorStop(0.6,'rgba(0,0,0,0.22)');g.addColorStop(1,'rgba(0,0,0,0)');sx2.fillStyle=g;sx2.fillRect(0,0,128,128);
+      const sh=new THREE.Mesh(new THREE.PlaneGeometry(PW*0.7,PW*0.28),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(sc),transparent:true,depthWrite:false}));
+      sh.rotation.x=-Math.PI/2;sh.position.y=-PH*0.5+0.05;sh.position.z=0.1;scene.add(sh);
+      let t=0;
+      (function loop(){
+        requestAnimationFrame(loop);t+=0.016;
+        const br=Math.sin(t*2.6);
+        for(let i=0;i<pos.count;i++){
+          const u=uv.getX(i),v=uv.getY(i);
+          let x=base0[i*3],y=base0[i*3+1];
+          const cx=x, cy=y+PH*0.5; // 발바닥 기준 높이
+          // 숨쉬기: 발은 고정, 위로 갈수록 살짝 늘었다 줄었다 + 좌우 볼록
+          y=base0[i*3+1]+ (cy*0.035*br);
+          x=x*(1+ (v)*0.03* -br);
+          // 귀(상단): 좌우 살랑
+          if(v>0.74){const k=(v-0.74)/0.26; x+=Math.sin(t*1.8+ (u<0.5?0:Math.PI))*0.10*k;}
+          // 꼬리(우측 중단): 흔들
+          if(u>0.66 && v>0.2 && v<0.72){const k=(u-0.66)/0.34; y+=Math.sin(t*2.4)*0.10*k; x+=Math.cos(t*2.4)*0.06*k;}
+          pos.setX(i,x);pos.setY(i,y);
+        }
+        pos.needsUpdate=true;
+        mesh.position.y=Math.abs(Math.sin(t*2.6))*0.05;
+        renderer.render(scene,cam);
+      })();
+    }
+  </script>
+</body>
+</html>

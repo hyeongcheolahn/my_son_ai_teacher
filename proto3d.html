@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>2D → 3D 시안 (3가지 방법)</title>
+  <script type="importmap">
+  { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+  </script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin:0; padding:22px;
+      background: radial-gradient(1100px 600px at 50% -10%, #1b2a52, #0c1430 60%);
+      color:#eaf0ff; font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif; }
+    h1 { font-size:21px; margin:0 0 6px; }
+    .sub { color:#9fb3e0; font-size:13.5px; margin:0 0 18px; line-height:1.6; }
+    .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); }
+    .card { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:14px; }
+    .ttl { font-size:15px; font-weight:700; margin:0 0 2px; }
+    .ttl .n { color:#ffd45e; }
+    .frame { aspect-ratio:1/1; border-radius:12px; overflow:hidden; background:#1a2748; margin:10px 0 8px; }
+    .frame canvas { width:100%; height:100%; display:block; }
+    .desc { font-size:12.5px; color:#aab9e0; line-height:1.55; margin:0; }
+    .good { color:#7fe0a0; } .bad { color:#ff9a8a; }
+    .pill { display:inline-block; font-size:11px; padding:2px 8px; border-radius:999px; background:#ffffff14; margin-bottom:6px; }
+  </style>
+</head>
+<body>
+  <h1>🧪 "2D 이미지를 3D화" — 같은 피카츄로 3가지 시안</h1>
+  <p class="sub">전부 <b>진짜 공식 피카츄 이미지 한 장</b>에서 출발합니다. 입체로 만드는 정도만 다릅니다.</p>
+  <div class="grid">
+    <div class="card">
+      <div class="ttl"><span class="n">①</span> 빌보드 (스탠디)</div>
+      <span class="pill">무료 · 지금 바로</span>
+      <div class="frame"><canvas id="c1"></canvas></div>
+      <p class="desc"><span class="good">진짜 모습 그대로</span>, 무대 위에 서서 그림자 지고 통통 움직임. <span class="bad">옆에서 보면 종이처럼 납작</span>(그래서 항상 정면을 보게 함).</p>
+    </div>
+    <div class="card">
+      <div class="ttl"><span class="n">②</span> 뎁스 팝아웃 (2.5D)</div>
+      <span class="pill">무료 · 약간 작업</span>
+      <div class="frame"><canvas id="c2"></canvas></div>
+      <p class="desc">이미지에 <span class="good">추정 깊이</span>를 줘 부조처럼 튀어나오고 빛을 받음(좌우로 살짝 흔들림). <span class="bad">크게 돌리면 깨짐</span>.</p>
+    </div>
+    <div class="card">
+      <div class="ttl"><span class="n">③</span> AI 추정 3D (퍼프)</div>
+      <span class="pill">진짜 모델 느낌</span>
+      <div class="frame"><canvas id="c3"></canvas></div>
+      <p class="desc"><span class="good">완전히 회전</span>하는 입체. 실루엣을 부풀려 볼륨 생성 — <span class="bad">앞은 진짜, 뒤·옆은 추측이라 뭉개짐</span>(실제 AI 변환도 이런 한계).</p>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    const ART = (d) => `https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon/other/official-artwork/${d}.png`;
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => buildAll(img);
+    img.onerror = () => document.querySelectorAll('.frame').forEach(f => f.innerHTML = '<p style="color:#889;font-size:12px;padding:20px">이미지 로드 실패</p>');
+    img.src = ART(25);
+
+    // ---- 공통 유틸 -----------------------------------------------------------
+    function pixelData(image, S) {
+      const c = document.createElement('canvas'); c.width = S; c.height = S;
+      const x = c.getContext('2d'); x.drawImage(image, 0, 0, S, S);
+      return x.getImageData(0, 0, S, S).data;
+    }
+    function spriteTexture(image) {
+      const t = new THREE.Texture(image); t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true; return t;
+    }
+    // 밝기×알파 → 깊이맵(배경=0)
+    function depthTexture(image, S) {
+      const c = document.createElement('canvas'); c.width = S; c.height = S;
+      const x = c.getContext('2d'); x.drawImage(image, 0, 0, S, S);
+      const d = x.getImageData(0, 0, S, S); const p = d.data;
+      for (let i = 0; i < p.length; i += 4) {
+        const a = p[i + 3] / 255;
+        const lum = (0.3 * p[i] + 0.5 * p[i + 1] + 0.2 * p[i + 2]) * a;
+        p[i] = p[i + 1] = p[i + 2] = lum; p[i + 3] = 255;
+      }
+      x.putImageData(d, 0, 0);
+      const t = new THREE.CanvasTexture(c); return t;
+    }
+    // 부드러운 그라운드 그림자 텍스처
+    function shadowTexture() {
+      const S = 128, c = document.createElement('canvas'); c.width = c.height = S;
+      const x = c.getContext('2d');
+      const g = x.createRadialGradient(S/2, S/2, 0, S/2, S/2, S/2);
+      g.addColorStop(0, 'rgba(0,0,0,0.55)'); g.addColorStop(0.6, 'rgba(0,0,0,0.25)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      x.fillStyle = g; x.fillRect(0, 0, S, S);
+      return new THREE.CanvasTexture(c);
+    }
+    function baseScene(canvas) {
+      const w = canvas.clientWidth || 280, h = canvas.clientHeight || 280;
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); renderer.setSize(w, h, false);
+      const scene = new THREE.Scene(); scene.background = new THREE.Color('#1a2748');
+      const cam = new THREE.PerspectiveCamera(40, w / h, 0.1, 100);
+      scene.add(new THREE.HemisphereLight(0xdfeaff, 0x33406a, 1.1));
+      const dir = new THREE.DirectionalLight(0xffffff, 1.7); dir.position.set(-3, 5, 6); scene.add(dir);
+      return { renderer, scene, cam, w, h };
+    }
+
+    function buildAll(image) {
+      const tex = spriteTexture(image);
+      const aspect = image.naturalWidth / image.naturalHeight || 1;
+      const PW = 2.6, PH = PW / aspect;
+      const SIZE = 128;
+      const pix = pixelData(image, SIZE);
+
+      panelBillboard(document.getElementById('c1'), tex, PW, PH);
+      panelPopout(document.getElementById('c2'), image, PW, PH, SIZE);
+      panelPuff(document.getElementById('c3'), tex, PW, PH, pix, SIZE);
+    }
+
+    // ① 빌보드: 카메라를 항상 바라보는 평면 + 그라운드 그림자
+    function panelBillboard(canvas, tex, PW, PH) {
+      const { renderer, scene, cam } = baseScene(canvas);
+      cam.position.set(0, 0.3, 5.2); cam.lookAt(0, 0.2, 0);
+      const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide });
+      const sprite = new THREE.Mesh(new THREE.PlaneGeometry(PW, PH), mat);
+      sprite.position.y = 0.25; scene.add(sprite);
+      const shadow = new THREE.Mesh(new THREE.PlaneGeometry(PW * 0.8, PW * 0.34),
+        new THREE.MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false }));
+      shadow.rotation.x = -Math.PI / 2; shadow.position.y = PH * -0.5 + 0.18; scene.add(shadow);
+      let t = 0;
+      (function loop() {
+        requestAnimationFrame(loop); t += 0.016;
+        sprite.position.y = 0.25 + Math.sin(t * 2) * 0.07;
+        sprite.quaternion.copy(cam.quaternion);
+        renderer.render(scene, cam);
+      })();
+    }
+
+    // ② 뎁스 팝아웃: 깊이맵으로 변위된 평면이 좌우로 흔들리며 빛을 받음
+    function panelPopout(canvas, image, PW, PH, SIZE) {
+      const { renderer, scene, cam } = baseScene(canvas);
+      cam.position.set(0, 0.2, 5.0); cam.lookAt(0, 0, 0);
+      const tex = spriteTexture(image);
+      const disp = depthTexture(image, SIZE);
+      const geo = new THREE.PlaneGeometry(PW, PH, 96, 96);
+      const mat = new THREE.MeshStandardMaterial({
+        map: tex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide,
+        displacementMap: disp, displacementScale: 0.55, roughness: 0.8, metalness: 0.0,
+      });
+      const mesh = new THREE.Mesh(geo, mat); scene.add(mesh);
+      let t = 0;
+      (function loop() {
+        requestAnimationFrame(loop); t += 0.016;
+        mesh.rotation.y = Math.sin(t * 0.7) * 0.55;
+        renderer.render(scene, cam);
+      })();
+    }
+
+    // ③ 퍼프: 실루엣 알파를 흐려 높이맵으로 → 앞/뒤 평면을 부풀려 볼륨 생성, 완전 회전
+    function panelPuff(canvas, tex, PW, PH, pix, SIZE) {
+      const { renderer, scene, cam } = baseScene(canvas);
+      cam.position.set(0, 0.2, 5.0); cam.lookAt(0, 0, 0);
+
+      // 알파 → 0..1, 박스 블러로 부드럽게(가장자리 테이퍼)
+      const a = new Float32Array(SIZE * SIZE);
+      for (let i = 0; i < SIZE * SIZE; i++) a[i] = pix[i * 4 + 3] / 255;
+      const blur = boxBlur(a, SIZE, 6);
+
+      const front = puffPlane(PW, PH, SIZE, blur, +1);
+      const back = puffPlane(PW, PH, SIZE, blur, -1);
+      const fmat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.5, roughness: 0.7, side: THREE.FrontSide });
+      const bmat = new THREE.MeshStandardMaterial({ map: tex, color: 0x6b7390, transparent: true, alphaTest: 0.5, roughness: 0.9, side: THREE.BackSide });
+      const group = new THREE.Group();
+      group.add(new THREE.Mesh(front, fmat));
+      group.add(new THREE.Mesh(back, bmat));
+      scene.add(group);
+      let t = 0;
+      (function loop() {
+        requestAnimationFrame(loop); t += 0.016;
+        group.rotation.y += 0.02;
+        renderer.render(scene, cam);
+      })();
+    }
+    function puffPlane(PW, PH, SIZE, height, sign) {
+      const geo = new THREE.PlaneGeometry(PW, PH, 110, 110);
+      const pos = geo.attributes.position, uv = geo.attributes.uv;
+      for (let i = 0; i < pos.count; i++) {
+        const u = uv.getX(i), v = uv.getY(i);
+        const ix = Math.min(SIZE - 1, Math.max(0, Math.round(u * (SIZE - 1))));
+        const iy = Math.min(SIZE - 1, Math.max(0, Math.round((1 - v) * (SIZE - 1))));
+        const hgt = height[iy * SIZE + ix];
+        pos.setZ(i, sign * 0.95 * Math.pow(hgt, 0.7));
+      }
+      geo.computeVertexNormals();
+      return geo;
+    }
+    function boxBlur(src, S, r) {
+      const tmp = new Float32Array(S * S), out = new Float32Array(S * S);
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        let s = 0, n = 0;
+        for (let k = -r; k <= r; k++) { const xx = x + k; if (xx >= 0 && xx < S) { s += src[y * S + xx]; n++; } }
+        tmp[y * S + x] = s / n;
+      }
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        let s = 0, n = 0;
+        for (let k = -r; k <= r; k++) { const yy = y + k; if (yy >= 0 && yy < S) { s += tmp[yy * S + x]; n++; } }
+        out[y * S + x] = s / n;
+      }
+      return out;
+    }
+  </script>
+</body>
+</html>

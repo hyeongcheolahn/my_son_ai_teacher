@@ -1,0 +1,10 @@
+# macOS
+.DS_Store
+
+# 로그/임시
+*.log
+*.tmp
+
+# 에디터
+.vscode/
+.idea/

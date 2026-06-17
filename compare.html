@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>진짜 이미지 vs 게임 3D — 비교</title>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px;
+      background: radial-gradient(1200px 600px at 50% -10%, #1b2a52, #0d1530 60%);
+      color: #eaf0ff;
+      font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+    }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    .sub { color: #9fb3e0; font-size: 14px; margin: 0 0 18px; line-height: 1.6; }
+    .legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; margin-bottom: 22px; }
+    .legend b { color: #ffd45e; }
+    .grid {
+      display: grid; gap: 18px;
+      grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+    }
+    .card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px; padding: 14px;
+    }
+    .name { font-size: 16px; font-weight: 700; margin: 0 0 2px; }
+    .name .en { color: #8fa6d6; font-weight: 500; font-size: 13px; margin-left: 6px; }
+    .badge {
+      display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px;
+      margin-left: 6px; vertical-align: middle;
+    }
+    .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .cell { text-align: center; }
+    .cell .tag { font-size: 12px; color: #b9c7ee; margin-bottom: 6px; display: block; }
+    .cell .tag.real b { color: #7fe0a0; }
+    .cell .tag.d3 b { color: #ffb45e; }
+    .frame {
+      position: relative; aspect-ratio: 1 / 1; border-radius: 12px; overflow: hidden;
+      background: linear-gradient(180deg, #f4f7ff, #dde6fb);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .frame.d3 { background: linear-gradient(180deg, #1a2b55, #0f1c3c); }
+    .frame img { width: 92%; height: 92%; object-fit: contain;
+      filter: drop-shadow(0 6px 10px rgba(0,0,0,.25)); }
+    .frame canvas { width: 100%; height: 100%; display: block; }
+    .spin-note {
+      position: absolute; bottom: 6px; right: 8px; font-size: 10px;
+      color: #cdd8f5; background: rgba(0,0,0,.35); padding: 2px 7px; border-radius: 999px;
+    }
+    .imgerr { color: #6b7aa0; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>🆚 진짜 포켓몬 이미지(2D) vs 게임 3D(직접 만든 입체)</h1>
+  <p class="sub">
+    같은 포켓몬을 양쪽으로 띄웠습니다. <b style="color:#7fe0a0">왼쪽</b>은 PokéAPI의 <b>공식 일러스트(평면 그림)</b>,
+    <b style="color:#ffb45e">오른쪽</b>은 지금 게임이 쓰는 <b>절차적 3D 모델</b>(실제로 빙글빙글 돌아갑니다).
+  </p>
+  <div class="legend">
+    <span>✅ <b>진짜 이미지</b> — 모습은 진짜 그대로, 단 평면</span>
+    <span>🧊 <b>게임 3D</b> — 진짜 입체(돌아가고 그림자 있음), 단 외형은 근사치</span>
+  </div>
+  <div class="grid" id="grid"></div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { BattleScene } from './src/scene.js';
+    import { findDefAnywhere, typeColor, typeLabel } from './src/creatures.js';
+
+    // BattleScene.buildCreature 는 인스턴스 상태를 쓰지 않으므로(오직 this._addFeatures 호출)
+    // 가짜 컨텍스트로 그대로 재사용 → 게임과 100% 동일한 3D 지오메트리.
+    const ctx = { _addFeatures: BattleScene.prototype._addFeatures };
+    const build = (def) => BattleScene.prototype.buildCreature.call(ctx, def);
+
+    const ART = (n) => `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${n}.png`;
+    const LIST = [
+      { id: 'pikachu',    dex: 25  },
+      { id: 'charmander', dex: 4   },
+      { id: 'charizard',  dex: 6   },
+      { id: 'greninja',   dex: 658 },
+      { id: 'mewtwo',     dex: 150 },
+      { id: 'rayquaza',   dex: 384 },
+    ];
+
+    const grid = document.getElementById('grid');
+
+    for (const entry of LIST) {
+      const def = findDefAnywhere(entry.id);
+      if (!def) continue;
+      const tc = typeColor(def.type);
+
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `
+        <div class="name">${def.name}<span class="en">${def.en}</span>
+          <span class="badge" style="background:${tc}22;color:${tc};border:1px solid ${tc}66">${typeLabel(def.type)}</span>
+        </div>
+        <div class="pair">
+          <div class="cell">
+            <span class="tag real">✅ <b>진짜 이미지</b> (2D)</span>
+            <div class="frame">
+              <img alt="${def.en}" src="${ART(entry.dex)}"
+                   onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'imgerr',textContent:'이미지 로드 실패'}))" />
+            </div>
+          </div>
+          <div class="cell">
+            <span class="tag d3">🧊 <b>게임 3D</b></span>
+            <div class="frame d3">
+              <canvas></canvas>
+              <span class="spin-note">⟳ 돌아가는 중</span>
+            </div>
+          </div>
+        </div>`;
+      grid.appendChild(card);
+
+      const canvas = card.querySelector('canvas');
+      mountCreature(canvas, def);
+    }
+
+    function mountCreature(canvas, def) {
+      const w = canvas.clientWidth || 280;
+      const h = canvas.clientHeight || 280;
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(w, h, false);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+      const scene = new THREE.Scene();
+      scene.add(new THREE.HemisphereLight(0xcfe0ff, 0x2a3358, 1.0));
+      const dir = new THREE.DirectionalLight(0xffffff, 1.7);
+      dir.position.set(3, 7, 5);
+      dir.castShadow = true;
+      dir.shadow.mapSize.set(1024, 1024);
+      dir.shadow.camera.near = 1; dir.shadow.camera.far = 24;
+      dir.shadow.camera.left = -5; dir.shadow.camera.right = 5;
+      dir.shadow.camera.top = 5; dir.shadow.camera.bottom = -5;
+      scene.add(dir);
+      const rim = new THREE.DirectionalLight(0x88aaff, 0.5);
+      rim.position.set(-4, 3, -4);
+      scene.add(rim);
+
+      const group = build(def);
+      group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+
+      // 중심 정렬: x,z 중앙 + 발을 바닥(y=0)에
+      const box = new THREE.Box3().setFromObject(group);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      group.position.x -= center.x;
+      group.position.z -= center.z;
+      group.position.y -= box.min.y;
+
+      const pivot = new THREE.Group();
+      pivot.add(group);
+      pivot.rotation.y = 0.6; // 스크린샷에서도 입체가 보이도록 3/4 뷰
+      scene.add(pivot);
+
+      const ground = new THREE.Mesh(
+        new THREE.CircleGeometry(Math.max(size.x, size.z) * 1.7 + 0.4, 48),
+        new THREE.MeshStandardMaterial({ color: 0x1e3566, roughness: 1 })
+      );
+      ground.rotation.x = -Math.PI / 2;
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      const H = size.y, R = Math.max(size.x, size.z);
+      const dist = Math.max(H, R) * 2.5 + 1.6;
+      const cam = new THREE.PerspectiveCamera(38, w / h, 0.1, 100);
+      cam.position.set(0, H * 0.6, dist);
+      cam.lookAt(0, H * 0.5, 0);
+
+      function loop() {
+        requestAnimationFrame(loop);
+        pivot.rotation.y += 0.012;
+        renderer.render(scene, cam);
+      }
+      loop();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>수학 포켓 배틀</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <!-- 3D 캔버스 -->
+    <canvas id="scene"></canvas>
+
+    <!-- 상단 정보바 -->
+    <header id="topbar">
+      <div class="trainer">
+        <span class="label">트레이너</span>
+        <span id="trainer-level">Lv.1</span>
+      </div>
+      <div class="stage-info">
+        <button id="region-btn" class="region-chip">🗺️ 지방</button>
+        <span id="stage-name">시작 전</span>
+        <div class="stage-bar"><div id="stage-fill"></div></div>
+      </div>
+      <div class="caught">
+        <span class="label">잡은</span>
+        <span id="caught-count">0</span>
+      </div>
+      <button id="party-btn" class="icon-btn" title="파티/교체">🎒</button>
+      <button id="dex-btn" class="icon-btn" title="도감">📕</button>
+      <button id="parent-btn" class="icon-btn" title="부모 보기">👨‍👩‍👦</button>
+    </header>
+
+    <!-- 야생 몬스터 정보 -->
+    <div id="enemy-panel" class="mon-panel">
+      <span id="enemy-name">??</span>
+      <div class="hpbar"><div id="enemy-energy" class="energy"></div></div>
+      <span id="enemy-type" class="type-badge"></span>
+    </div>
+
+    <!-- 내 몬스터 정보 -->
+    <div id="ally-panel" class="mon-panel ally">
+      <span id="ally-name">??</span>
+      <div class="hpbar"><div id="ally-hp" class="hp"></div></div>
+      <div class="xpbar"><div id="ally-xp" class="xp"></div></div>
+      <span id="ally-xp-label" class="xp-label">EXP</span>
+    </div>
+
+    <!-- 말풍선 / 안내 -->
+    <div id="message-banner"></div>
+
+    <!-- 문제 패널 -->
+    <div id="quiz">
+      <div id="question">3 + 2 = ?</div>
+      <div id="choices"></div>
+    </div>
+
+    <!-- 포켓볼 버튼 -->
+    <button id="catch-btn" class="big-action hidden">⚪ 포켓볼 던지기!</button>
+
+    <!-- 변신(진화/메가진화/거다이맥스) 버튼 — 레벨 도달 시 등장 -->
+    <button id="transform-btn" class="big-action transform hidden">✨ 진화!</button>
+
+    <!-- 도감 모달 -->
+    <div id="dex-modal" class="modal hidden">
+      <button class="modal-x" data-close="dex-modal" aria-label="닫기">✕</button>
+      <div class="modal-box">
+        <h2>📕 포켓 도감</h2>
+        <div id="dex-grid"></div>
+        <button class="close-btn" data-close="dex-modal">닫기</button>
+      </div>
+    </div>
+
+    <!-- 부모 보기 모달 -->
+    <div id="parent-modal" class="modal hidden">
+      <button class="modal-x" data-close="parent-modal" aria-label="닫기">✕</button>
+      <div class="modal-box">
+        <h2>👨‍👩‍👦 학습 현황</h2>
+        <div id="parent-stats"></div>
+        <button id="reset-btn" class="reset-btn">진행도 초기화</button>
+        <button class="close-btn" data-close="parent-modal">닫기</button>
+      </div>
+    </div>
+
+    <!-- 지방(과목) 선택 -->
+    <div id="subject-modal" class="modal hidden">
+      <div class="modal-box">
+        <h2>🗺️ 어느 지방으로 갈까?</h2>
+        <p class="modal-sub">과목마다 다른 지방의 포켓몬이 나와요!</p>
+        <div id="subject-grid"></div>
+      </div>
+    </div>
+
+    <!-- 파티 / 교체 -->
+    <div id="party-modal" class="modal hidden">
+      <button class="modal-x" data-close="party-modal" aria-label="닫기">✕</button>
+      <div class="modal-box">
+        <h2>🎒 내 포켓몬</h2>
+        <p class="modal-sub">출전할 포켓몬을 골라요</p>
+        <div id="party-grid"></div>
+        <button class="close-btn" data-close="party-modal">닫기</button>
+      </div>
+    </div>
+
+    <!-- 포획: 데려가기 vs 경험치 -->
+    <div id="catch-choice-modal" class="modal hidden">
+      <div class="modal-box">
+        <h2 id="catch-choice-title">잡았다!</h2>
+        <p class="modal-sub">데려갈까? 경험치로 바꿀까?</p>
+        <div class="catch-choice-btns">
+          <button id="choice-keep" class="choice-btn keep">🎒 데려가기</button>
+          <button id="choice-xp" class="choice-btn xp">⭐ 경험치로!</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 진화 -->
+    <div id="evolve-modal" class="modal hidden">
+      <div class="modal-box">
+        <h2>✨ 진화!</h2>
+        <p class="modal-sub">다음 단계 통과 보상! 진화시킬 포켓몬을 골라요</p>
+        <div id="evolve-list"></div>
+        <button id="evolve-skip" class="close-btn">다음에</button>
+      </div>
+    </div>
+
+    <!-- 시작 화면 -->
+    <div id="start-screen" class="modal">
+      <div class="modal-box start">
+        <h1>⚡ 수학 포켓 배틀 ⚡</h1>
+        <p>문제를 맞히면 공격! 야생 포켓을 잡아보자!</p>
+        <button id="start-btn" class="big-action">모험 시작!</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
