@@ -4,6 +4,7 @@ import { BankEngine } from './bankengine.js';
 import * as C from './creatures.js';
 import * as storage from './storage.js';
 import { pickBall } from './data/balls.js';
+import { pickMove } from './data/moves.js';
 import { artUrl } from './data/dex.js';
 import { sfx } from './audio.js';
 
@@ -118,10 +119,14 @@ export class Game {
   // 화면에 보일 def: 기본형 또는 초진화 폼(메가/거다이맥스)의 아트·이름·크기 반영(타입·id는 유지)
   displayDef(o) {
     const base = C.getCreatureDef(o.subject, o.speciesId) || C.findDefAnywhere(o.speciesId);
-    if (!base || !o.form) return base;
-    const f = C.superForm(o.speciesId, o.form);
-    if (!f) return base;
-    return { ...base, name: f.name, formArt: f.art, scale: (base.scale || 1) * (o.form === 'gmax' ? 1.7 : 1.35) };
+    if (!base) return base;
+    let d = base;
+    if (o.form) {
+      const f = C.superForm(o.speciesId, o.form);
+      if (f) d = { ...base, name: f.name, formArt: f.art, scale: (base.scale || 1) * (o.form === 'gmax' ? 1.3 : 1.12) }; // 화면 밖 방지로 축소(높이 상한과 함께)
+    }
+    if (o.tera) d = { ...d, tera: true, teraType: base.type, name: `${d.name} 💎` }; // 테라스탈: 아트 유지 + 결정 효과
+    return d;
   }
 
   // ---- 변신(진화 권한) ---------------------------------------------------
@@ -135,8 +140,18 @@ export class Game {
       if (o.lv >= need) { const n = C.evolveDef(o.subject, o.speciesId); return n ? { kind: 'evolve', label: `${n.name} 진화`, icon: '✨' } : null; }
       return null;
     }
-    if (o.form == null && o.lv >= 18 && C.superForm(o.speciesId, 'mega')) return { kind: 'mega', label: '메가진화', icon: '🔥' };
-    if (o.form === 'mega' && o.lv >= 30 && C.superForm(o.speciesId, 'gmax')) return { kind: 'gmax', label: '거다이맥스', icon: '🌋' };
+    // 최종진화: 메가 → 거다이맥스 → 테라스탈 (종 경로에 맞게, 테라는 누구나 도달)
+    const hasMega = !!C.superForm(o.speciesId, 'mega');
+    const hasGmax = !!C.superForm(o.speciesId, 'gmax');
+    if (!o.form) {
+      if (hasMega && o.lv >= 18) return { kind: 'mega', label: '메가진화', icon: '🔥' };
+      if (!hasMega && !o.tera && o.lv >= 20) return { kind: 'tera', label: '테라스탈', icon: '💎' };
+    } else if (o.form === 'mega') {
+      if (hasGmax && o.lv >= 30) return { kind: 'gmax', label: '거다이맥스', icon: '🌋' };
+      if (!hasGmax && !o.tera && o.lv >= 30) return { kind: 'tera', label: '테라스탈', icon: '💎' };
+    } else if (o.form === 'gmax') {
+      if (!o.tera && o.lv >= 40) return { kind: 'tera', label: '테라스탈', icon: '💎' };
+    }
     return null;
   }
 
@@ -158,6 +173,10 @@ export class Game {
       const next = C.evolveDef(o.subject, o.speciesId);
       o.speciesId = next.id; this.state.dexSeen[next.id] = true;
       this.showMessage(`✨ ${next.name}(으)로 진화!`, '#ffd23f', 1900);
+    } else if (t.kind === 'tera') {
+      o.tera = true;
+      this.showMessage(`💎 테라스탈! ${C.getCreatureDef(o.subject, o.speciesId).name}`, '#7fe3ff', 2100);
+      this.scene.screenShake(0.5, 0.55);
     } else {
       o.form = t.kind;
       this.showMessage(`${t.icon} ${C.superForm(o.speciesId, t.kind).name}!`, '#ffd23f', 2100);
@@ -318,10 +337,12 @@ export class Game {
     const eff = C.effectiveness(allyType, this.enemy.def.type);            // 타입 상성
     const lvFactor = Math.max(0.6, Math.min(1.7, 1 + (this.allyLv() - (this.enemy.lv || 1)) * 0.05)); // 레벨차
     const o = this.activeOwned();
-    const formMult = o && o.form ? (o.form === 'gmax' ? 1.7 : 1.4) : 1;    // 메가/거다이맥스 위력
+    const formMult = (o && o.form ? (o.form === 'gmax' ? 1.7 : 1.4) : 1) * (o && o.tera ? 1.4 : 1); // 메가/거다이맥스/테라
     const dmg = (20 + Math.random() * 8) * eff * lvFactor * formMult;
     const willFaint = this.enemy.energy - dmg <= 0;
-    const power = (eff >= 2 ? 1.5 : eff <= 0.5 ? 0.7 : 1) * (o && o.form ? 1.3 : 1); // 상성·폼 → 연출 크기
+    const power = (eff >= 2 ? 1.5 : eff <= 0.5 ? 0.7 : 1) * (o && (o.form || o.tera) ? 1.3 : 1); // 상성·폼 → 연출 크기
+    const move = pickMove(allyType); // 타입별 2~3 기술 중 랜덤
+    this.showMessage(`${(allyDef && allyDef.name) || '내 포켓몬'}의 ${move.name}!`, '#fff', 1100);
     this.scene.attack('ally', allyType, () => {
       sfx.impact();
       this.enemy.energy = Math.max(0, this.enemy.energy - dmg);
@@ -332,7 +353,7 @@ export class Game {
         this.showMessage(this.enemy.isLegendary ? '지금이야! 포켓볼을 던져!' : '기절 직전! 포켓볼을 던져!', '#36d36e', 1200);
         setTimeout(() => $('catch-btn').classList.remove('hidden'), 500);
       }
-    }, { finisher: willFaint, power });
+    }, { finisher: willFaint, power, move });
     setTimeout(done, willFaint ? 1150 : 900);
   }
 
@@ -345,6 +366,8 @@ export class Game {
       const dmg = 15 * eff * lvFactor;
       const willFaint = this.allyHP - dmg <= 0;
       const power = eff >= 2 ? 1.5 : eff <= 0.5 ? 0.7 : 1;
+      const move = pickMove(this.enemy.def.type);
+      this.showMessage(`${this.enemy.def.name}의 ${move.name}!`, '#ff9a8a', 1000);
       this.scene.attack('enemy', this.enemy.def.type, () => {
         sfx.impact();
         this.allyHP = Math.max(0, this.allyHP - dmg);
@@ -355,7 +378,7 @@ export class Game {
             this.setActiveAlly();
           });
         }
-      }, { finisher: willFaint, power });
+      }, { finisher: willFaint, power, move });
       setTimeout(done, willFaint ? 1150 : 900);
     }, 400);
   }

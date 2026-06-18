@@ -238,7 +238,7 @@ export class BattleScene {
     this._loadTex(def.formArt != null ? def.formArt : def.id).then((tex) => {
       const img = tex.image;
       const aspect = (img && img.naturalWidth && img.naturalHeight) ? img.naturalWidth / img.naturalHeight : 0.85;
-      const H = 2.5 * (def.scale || 1);
+      const H = Math.min(3.7, 2.5 * (def.scale || 1)); // 상한: 거다이맥스 등 큰 폼이 화면 밖으로 안 나가게
       const W = H * aspect;
       plane.geometry.dispose();
       plane.geometry = new THREE.PlaneGeometry(W, H);
@@ -247,6 +247,7 @@ export class BattleScene {
       planeMat.needsUpdate = true;
       plane.visible = true;
       shadow.scale.set(W * 0.5, W * 0.3, 1);
+      if (def.tera) this._addTeraCrown(g, def.teraType || def.type, H + 0.18, plane, tex); // 테라스탈 결정 효과
     }).catch(() => {
       // 이미지 실패 → 같은(이미 배치된) 그룹에 절차적 모델 이식
       while (g.children.length) g.remove(g.children[0]);
@@ -284,6 +285,105 @@ export class BattleScene {
     return this._shadowTexCache;
   }
 
+  // 스프라이트 이미지로부터 "결정화" 텍스처 생성: 밝은 유리 보석 질감 — 흰빛 베이스 + 타입색 색조 + 큰 결정면(facet).
+  _makeCrystalTexture(image, colorNum) {
+    const hex = '#' + ('000000' + (colorNum >>> 0).toString(16)).slice(-6);
+    const iw = image.naturalWidth || 256, ih = image.naturalHeight || 256;
+    const w = 320, h = Math.max(1, Math.round(320 * ih / iw));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(image, 0, 0, w, h);
+    ctx.globalCompositeOperation = 'source-atop';   // 이후 그리기는 포켓몬 실루엣 안에만
+    // 유리/보석 베이스: 흰빛으로 밝게(투명 보석 느낌) + 타입색 색조
+    ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.3; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = hex; ctx.globalAlpha = 0.32; ctx.fillRect(0, 0, w, h);
+    // 큰 결정면: 밝은 흰 면 / 타입색 면 교차 (깎인 보석)
+    for (let i = 0; i < 42; i++) {
+      const x = Math.random() * w, y = Math.random() * h, s = 26 + Math.random() * 56;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(Math.random() * Math.PI * 2);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(s, s * (Math.random() * 0.6 + 0.2));
+      ctx.lineTo(s * (Math.random() * 0.6 + 0.2), s);
+      ctx.closePath();
+      if (Math.random() > 0.5) { ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.3 + Math.random() * 0.5; }   // 흰 하이라이트 면
+      else { ctx.fillStyle = hex; ctx.globalAlpha = 0.12 + Math.random() * 0.3; }                            // 타입색 면
+      ctx.fill(); ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+
+  // 테라스탈(SV 기준): 머리 위 결정 왕관 + 몸 전체가 깎인 보석처럼 결정화 + 바닥 글로우 링.
+  _addTeraCrown(g, type, topY, plane, tex) {
+    const color = TYPE_COLORS[type] || 0x7fe3ff;
+    const gemMat = () => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.85, roughness: 0.1, metalness: 0.5, transparent: true, opacity: 0.95 });
+
+    // 테라 주얼 왕관: 밴드(머리 위 타원 띠) + 위로 솟은 결정 + 정면 육각 보석(화난 눈) — 카메라를 향함.
+    const crown = new THREE.Group();
+    crown.position.y = topY - (plane && plane.geometry ? plane.geometry.parameters.height * 0.12 : 0); // 머리에 더 가깝게
+    crown.scale.setScalar(0.85);
+    const metalMat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.5, metalness: 0.7, roughness: 0.2 });
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.055, 8, 6), metalMat);
+    band.rotation.x = -1.15; // 앞으로 기울여 타원(왕관 띠)으로 보이게
+    crown.add(band);
+    const top = new THREE.Mesh(new THREE.OctahedronGeometry(0.17), gemMat());
+    top.scale.set(1, 1.6, 0.65); top.position.set(0, 0.3, -0.02);
+    crown.add(top);
+    for (const sx of [-0.28, 0.28]) { // 양옆 작은 결정
+      const s = new THREE.Mesh(new THREE.OctahedronGeometry(0.1), gemMat());
+      s.scale.set(1, 1.4, 0.6); s.position.set(sx, 0.17, 0.02);
+      crown.add(s);
+    }
+    const hex = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.06, 6), gemMat()); // 정면 육각 결정
+    hex.rotation.x = Math.PI / 2; hex.position.set(0, 0.02, 0.4);
+    crown.add(hex);
+    for (const sx of [-0.05, 0.05]) { // 화난 눈 두 개(상징)
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 6), new THREE.MeshBasicMaterial({ color: 0x141414 }));
+      eye.scale.set(1, 1.5, 1);
+      eye.position.set(sx, 0.03, 0.45);
+      eye.rotation.z = sx > 0 ? -0.5 : 0.5;
+      crown.add(eye);
+    }
+    g.add(crown);
+
+    // 바닥 타입색 글로우 링
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.6, 0.95, 28),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.16;
+    g.add(ring);
+
+    // 몸 보석화(테라스탈의 핵심): 스프라이트로부터 "결정화 텍스처"(타입색 틴트 + 무작위 결정면)를
+    // 만들어 몸 위에 덮어 깎인 보석처럼 보이게 + 가산 광택 + 반짝이는 패싯.
+    let glowMat = null;
+    const sparkles = [];
+    if (plane && tex && tex.image) {
+      const pw = plane.geometry.parameters.width, ph = plane.geometry.parameters.height;
+      const crystalTex = this._makeCrystalTexture(tex.image, color);
+      const crystal = new THREE.Mesh(plane.geometry, new THREE.MeshBasicMaterial({ map: crystalTex, transparent: true, alphaTest: 0.5, opacity: 0.9, depthWrite: false }));
+      crystal.position.copy(plane.position); crystal.position.z += 0.006; plane.parent.add(crystal); // 결정 표면
+      glowMat = new THREE.MeshBasicMaterial({ map: tex, color, transparent: true, alphaTest: 0.5, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false });
+      const glow = new THREE.Mesh(plane.geometry, glowMat);
+      glow.position.copy(plane.position); glow.position.z += 0.014; plane.parent.add(glow);          // 광택(luster)
+      for (let i = 0; i < 5; i++) {                                                                   // 반짝이는 패싯 glint
+        const sp = new THREE.Mesh(new THREE.OctahedronGeometry(0.075),
+          new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending }));
+        sp.position.set((Math.random() - 0.5) * pw * 0.45, plane.position.y + (Math.random() - 0.5) * ph * 0.5, 0.03);
+        sp.userData.ph = Math.random() * Math.PI * 2;
+        plane.parent.add(sp); sparkles.push(sp);
+      }
+    }
+
+    g.userData.teraCrown = crown;
+    g.userData.teraCrownBaseY = crown.position.y;
+    g.userData.teraRing = ring;
+    g.userData.teraGlow = glowMat;
+    g.userData.teraSparkles = sparkles;
+  }
+
   // 스프라이트 아이들 애니메이션: 카메라 향하기 + 발 고정 숨쉬기 + 피격 틴트
   _animateSprite(g, u, dt) {
     const dx = this.camera.position.x - g.position.x;
@@ -301,6 +401,17 @@ export class BattleScene {
       if (mat) mat.color.setRGB(1, 1 - f * 0.5, 1 - f * 0.5);
     } else if (mat) {
       mat.color.setRGB(1, 1, 1);
+    }
+    if (u.teraCrown) u.teraCrown.position.y = u.teraCrownBaseY + Math.sin(this._t * 1.6) * 0.05;  // 왕관 둥실
+    if (u.teraRing) u.teraRing.material.opacity = 0.3 + Math.sin(this._t * 3) * 0.15;             // 링 맥동
+    if (u.teraGlow) u.teraGlow.opacity = 0.2 + (Math.sin(this._t * 2.4) * 0.5 + 0.5) * 0.22;      // 몸 광택 명멸
+    if (u.teraSparkles) {                                                                          // 패싯 반짝임
+      for (const sp of u.teraSparkles) {
+        const tw = Math.sin(this._t * 4 + sp.userData.ph) * 0.5 + 0.5;
+        sp.material.opacity = 0.12 + tw * 0.85;
+        sp.scale.setScalar(0.45 + tw * 0.85);
+        sp.rotation.y += dt * 2.2; sp.rotation.x += dt * 1.3;
+      }
     }
   }
 
@@ -460,8 +571,13 @@ export class BattleScene {
     this._lunge(attacker, target, finisher);
     if (finisher) this._charge(from, color);
 
-    const fn = this[`_move_${type}`] ? `_move_${type}` : '_move_default';
-    const impactDelay = this[fn](from, to, color, finisher, target, type);
+    let impactDelay;
+    if (opts && opts.move) {
+      impactDelay = this._playMove(from, to, opts.move, finisher, target); // 명명된 기술(2~3종 랜덤)
+    } else {
+      const fn = this[`_move_${type}`] ? `_move_${type}` : '_move_default';
+      impactDelay = this[fn](from, to, color, finisher, target, type);
+    }
 
     const power = (finisher ? 2.4 : 1) * (opts.power || 1); // 피니쉬 + 타입 상성
     let fired = false;
@@ -603,8 +719,8 @@ export class BattleScene {
     });
     return 360;
   }
-  // 드래곤: 굵은 빔 + 직진 코어
-  _move_dragon(from, to, color, fin) {
+  // 굵은 빔(드래곤/솔라빔/냉동빔 등 공용)
+  _beam(from, to, color, fin) {
     const dir = to.clone().sub(from); const len = dir.length();
     const geo = new THREE.CylinderGeometry(fin ? 0.34 : 0.2, fin ? 0.22 : 0.12, len, 14, 1, true);
     const beam = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
@@ -621,8 +737,33 @@ export class BattleScene {
         return true;
       },
     });
+    return 230;
+  }
+  // 드래곤: 굵은 빔 + 직진 코어
+  _move_dragon(from, to, color, fin) {
+    this._beam(from, to, color, fin);
     this._stream(from, to, { color, type: 'default', count: fin ? 16 : 8, arc: 0.2, spin: 5, scale: fin ? 1.5 : 1, straight: true });
     return 230;
+  }
+
+  // 기술 스펙(타입별 2~3종)에 따라 연출 실행. 반환: 임팩트 지연(ms).
+  _playMove(from, to, move, fin, target) {
+    const color = TYPE_COLORS[move.geo] || 0xffffff;
+    switch (move.style) {
+      case 'lightning': return this._move_electric(from, to, color, fin);
+      case 'beam':
+        this._stream(from, to, { color, type: move.geo, count: fin ? 14 : 8, arc: 0.15, spin: 4, scale: fin ? 1.4 : 1, straight: true });
+        return this._beam(from, to, color, fin);
+      case 'orbs': return this._move_psychic(from, to, color, fin, target);
+      case 'tackle':
+        this._stream(from, to, { color, type: move.geo, count: fin ? 10 : 5, arc: 0.2, spin: 6, scale: fin ? 1.4 : 0.9, straight: true });
+        return 210;
+      case 'burst':
+        return this._stream(from, to, { color, type: move.geo, count: fin ? Math.round((move.count || 24) * 1.5) : (move.count || 24), arc: 0.15, spin: 6, scale: fin ? 1.7 : 1.15, straight: true });
+      case 'stream':
+      default:
+        return this._stream(from, to, { color, type: move.geo, count: fin ? Math.round((move.count || 16) * 1.6) : (move.count || 16), arc: move.arc == null ? 0.8 : move.arc, spin: move.spin == null ? 6 : move.spin, scale: (move.scale || 1) * (fin ? 1.5 : 1), straight: !!move.straight, swirl: !!move.swirl });
+    }
   }
 
   // 피니쉬: 화면 전체 섬광
