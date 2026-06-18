@@ -1,5 +1,8 @@
 import { Game } from './game.js';
+import { requireUnlock } from './gate.js';
 
 window.addEventListener('DOMContentLoaded', () => {
-  window.__game = new Game();
+  requireUnlock().then(() => {
+    window.__game = new Game();
+  });
 });
