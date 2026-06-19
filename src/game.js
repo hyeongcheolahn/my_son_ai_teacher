@@ -10,6 +10,13 @@ import { sfx } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
 
+function shuffleArr(a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+const escapeText = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const escapeAttr = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
 export class Game {
   constructor() {
     this.state = storage.load();
@@ -22,7 +29,18 @@ export class Game {
     this.enemy = null;          // { def, energy, maxEnergy, isLegendary, lv }
     this.engine = null;
     this.pendingEvolutions = 0;
+    if (!this.state.review) this.state.review = [];
     this.bindUI();
+    this.applyProfile();
+    this.updateReviewBadge();
+  }
+
+  applyProfile() {
+    const p = storage.getActiveProfile();
+    if (p) {
+      const av = $('trainer-avatar'); if (av) av.textContent = p.avatar;
+      const nm = $('trainer-name'); if (nm) nm.textContent = p.name;
+    }
   }
 
   _ensureLevels() {
@@ -40,8 +58,12 @@ export class Game {
     $('parent-btn').onclick = () => this.openParent();
     $('party-btn').onclick = () => this.openParty();
     $('region-btn').onclick = () => this.openSubjectSelect();
+    $('review-btn').onclick = () => this.openReview();
+    $('profile-chip').onclick = () => { sfx.tap(); location.reload(); }; // 친구 바꾸기(프로필 선택 화면으로)
     $('reset-btn').onclick = () => {
-      if (confirm('정말 진행도를 모두 초기화할까요?')) { storage.reset(); location.reload(); }
+      const p = storage.getActiveProfile();
+      const who = p ? `'${p.name}'의 ` : '';
+      if (confirm(`정말 ${who}진행도를 모두 초기화할까요?`)) { storage.reset(); location.reload(); }
     };
     document.querySelectorAll('[data-close]').forEach((b) => {
       b.onclick = () => $(b.dataset.close).classList.add('hidden');
@@ -322,6 +344,7 @@ export class Game {
       btn.classList.add('wrong');
       buttons.find((b) => String(b.textContent) === String(this.q.answer))?.classList.add('correct');
       this.state.totalWrong++;
+      this.addReview(this.q);
       sfx.wrong();
       this.showMessage('아쉬워! 다시 도전!', '#ff7a9c', 900);
       this.enemyCounter(() => this.afterAnswer(promoted, false));
@@ -592,6 +615,82 @@ export class Game {
     }
     wrap.innerHTML = html;
     $('parent-modal').classList.remove('hidden');
+  }
+
+  // ---- 오답 복습 ---------------------------------------------------------
+  addReview(q) {
+    if (!q) return;
+    if (!this.state.review) this.state.review = [];
+    const key = String(q.text);
+    if (this.state.review.some((r) => r.key === key)) return; // 중복 방지
+    this.state.review.push({
+      key, text: q.text, answer: q.answer,
+      choices: [...q.choices], skillId: q.skillId, subject: this.state.currentSubject,
+    });
+    if (this.state.review.length > 40) this.state.review.shift(); // 너무 쌓이지 않게
+    this.updateReviewBadge();
+  }
+
+  updateReviewBadge() {
+    const n = (this.state.review || []).length;
+    const b = $('review-badge');
+    if (!b) return;
+    if (n > 0) { b.textContent = n; b.classList.remove('hidden'); }
+    else b.classList.add('hidden');
+  }
+
+  openReview() {
+    sfx.tap();
+    this.reviewSession = [...(this.state.review || [])];
+    this.reviewPos = 0;
+    this.reviewRight = 0;
+    $('review-modal').classList.remove('hidden');
+    this.renderReviewCard();
+  }
+
+  renderReviewCard() {
+    const body = $('review-body');
+    const session = this.reviewSession || [];
+    if (!session.length) {
+      body.innerHTML = '<p class="review-empty">아직 틀린 문제가 없어요!<br>잘하고 있어요 🎉</p>';
+      return;
+    }
+    if (this.reviewPos >= session.length) {
+      body.innerHTML = `<p class="review-empty">복습 끝! 🎉<br>맞춘 문제 <b>${this.reviewRight} / ${session.length}</b><br><small style="opacity:.7">맞춘 문제는 목록에서 빠졌어요</small></p>`;
+      this.updateReviewBadge();
+      return;
+    }
+    const item = session[this.reviewPos];
+    const choices = shuffleArr([...item.choices]);
+    const isText = typeof item.answer !== 'number';
+    body.innerHTML = `
+      <div class="review-progress">${this.reviewPos + 1} / ${session.length}</div>
+      <div class="review-q${String(item.text).length > 12 ? ' small' : ''}">${escapeText(item.text)}</div>
+      <div class="review-choices">
+        ${choices.map((c) => `<button class="choice${isText ? ' text' : ''}" data-c="${escapeAttr(c)}">${escapeText(c)}</button>`).join('')}
+      </div>`;
+    body.querySelectorAll('.choice').forEach((btn) => {
+      btn.onclick = () => this.answerReview(item, btn.dataset.c, btn, body);
+    });
+  }
+
+  answerReview(item, value, btn, body) {
+    const buttons = [...body.querySelectorAll('.choice')];
+    buttons.forEach((b) => (b.disabled = true));
+    const correct = String(value) === String(item.answer);
+    if (correct) {
+      btn.classList.add('correct');
+      sfx.correct();
+      this.reviewRight++;
+      // 맞히면 복습 목록에서 제거
+      this.state.review = (this.state.review || []).filter((r) => r.key !== item.key);
+      storage.save(this.state);
+    } else {
+      btn.classList.add('wrong');
+      buttons.find((b) => String(b.dataset.c) === String(item.answer))?.classList.add('correct');
+      sfx.wrong();
+    }
+    setTimeout(() => { this.reviewPos++; this.renderReviewCard(); }, correct ? 700 : 1300);
   }
 
   // ---- UI 갱신 -----------------------------------------------------------

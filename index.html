@@ -21,10 +21,13 @@
 
     <!-- 상단 정보바 -->
     <header id="topbar">
-      <div class="trainer">
-        <span class="label">트레이너</span>
-        <span id="trainer-level">Lv.1</span>
-      </div>
+      <button id="profile-chip" class="trainer" title="친구 바꾸기">
+        <span id="trainer-avatar" class="avatar">🦊</span>
+        <span class="tinfo">
+          <span id="trainer-name" class="tname">친구</span>
+          <span id="trainer-level">Lv.1</span>
+        </span>
+      </button>
       <div class="stage-info">
         <button id="region-btn" class="region-chip">🗺️ 지방</button>
         <span id="stage-name">시작 전</span>
@@ -34,6 +37,7 @@
         <span class="label">잡은</span>
         <span id="caught-count">0</span>
       </div>
+      <button id="review-btn" class="icon-btn" title="복습">📝<span id="review-badge" class="badge hidden">0</span></button>
       <button id="party-btn" class="icon-btn" title="파티/교체">🎒</button>
       <button id="dex-btn" class="icon-btn" title="도감">📕</button>
       <button id="parent-btn" class="icon-btn" title="부모 보기">👨‍👩‍👦</button>
@@ -76,6 +80,16 @@
         <h2>📕 포켓 도감</h2>
         <div id="dex-grid"></div>
         <button class="close-btn" data-close="dex-modal">닫기</button>
+      </div>
+    </div>
+
+    <!-- 오답 복습 모달 -->
+    <div id="review-modal" class="modal hidden">
+      <button class="modal-x" data-close="review-modal" aria-label="닫기">✕</button>
+      <div class="modal-box">
+        <h2>📝 오답 복습</h2>
+        <div id="review-body"></div>
+        <button class="close-btn" data-close="review-modal">닫기</button>
       </div>
     </div>
 
