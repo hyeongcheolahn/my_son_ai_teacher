@@ -3,6 +3,11 @@ import { requireUnlock } from './gate.js';
 import { chooseProfile } from './profile.js';
 import * as storage from './storage.js';
 
+// 항상 최신 버전을 받도록 서비스워커 등록(캐시로 옛 버전이 남는 문제 방지)
+if ('serviceWorker' in navigator) {
+  try { navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {}); } catch {}
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   requireUnlock().then(async () => {
     storage.migrateLegacy();      // 예전 단일 세이브 → 기본 프로필로 이전(최초 1회)
