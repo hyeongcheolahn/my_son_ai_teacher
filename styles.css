@@ -243,6 +243,9 @@ body {
 .review-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .review-empty { font-size: 18px; line-height: 1.6; padding: 24px 8px; }
 
+/* 부모 보기 바로가기 (과목 바꾸기 / 홈) */
+.nav-row { display: flex; gap: 8px; margin-top: 14px; }
+
 /* 학습 리포트 / 동기화 */
 .report-box { margin-top: 16px; border-top: 1px solid rgba(255,255,255,.15); padding-top: 14px; text-align: left; }
 .report-btns { display: flex; gap: 8px; }
@@ -303,7 +306,11 @@ body {
   #question { font-size: 38px; }
   .choice { font-size: 26px; padding: 16px; }
   .mon-panel { min-width: 150px; }
-  #topbar { gap: 6px; padding: 8px 8px; }
+  /* 버튼이 잘리지 않게: 진행도(지방/단계)는 아래 줄로 내려서 '🗺️ 과목변경'을 크게 누를 수 있게 */
+  #topbar { gap: 6px; padding: 8px 8px; flex-wrap: wrap; }
+  .stage-info { order: 9; flex-basis: 100%; min-width: 0; }
+  .region-chip { padding: 6px 16px; font-size: 13px; }
+  #enemy-panel { top: 104px; }
   .icon-btn { width: 38px; height: 38px; font-size: 19px; }
   #profile-chip { padding: 4px 7px 4px 6px; gap: 6px; }
   #profile-chip .avatar { font-size: 22px; }

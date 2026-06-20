@@ -70,6 +70,8 @@ export class Game {
     $('parent-btn').onclick = () => this.openParent();
     $('party-btn').onclick = () => this.openParty();
     $('region-btn').onclick = () => this.openSubjectSelect();
+    $('go-subject').onclick = () => { sfx.tap(); $('parent-modal').classList.add('hidden'); this.openSubjectSelect(); };
+    $('go-home').onclick = () => { sfx.tap(); location.reload(); };
     $('review-btn').onclick = () => this.openReview();
     $('profile-chip').onclick = () => { sfx.tap(); location.reload(); }; // 친구 바꾸기(프로필 선택 화면으로)
     $('reset-btn').onclick = () => {
