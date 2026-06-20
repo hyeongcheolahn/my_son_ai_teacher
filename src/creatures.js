@@ -3,6 +3,7 @@
 import { REGIONS } from './data/regions.js';
 import { EXTRA } from './data/extra.js';
 import { EXTRA2, EXTRA_LEVELS } from './data/extra2.js';
+import { EXTRA3, EXTRA_LEVELS3 } from './data/extra3.js';
 
 export const SUBJECTS = [
   { key: 'math', label: '수학', region: '관동', emoji: '➕' },
@@ -29,20 +30,25 @@ function dedupeItems(items) {
   return out;
 }
 
+const ADD_SOURCES = [EXTRA, EXTRA2, EXTRA3];          // 기존 단계에 문제 추가
+const NEW_LEVEL_SOURCES = [EXTRA_LEVELS, EXTRA_LEVELS3]; // 새 단계 추가
+
 export function buildBank(subject) {
   const r = REGIONS[subject];
   if (!r || !r.questionBank) return null;
-  const ex = EXTRA[subject] || {};
-  const ex2 = EXTRA2[subject] || {};
-  const levels = r.questionBank.levels.map((l) => ({
-    id: l.id,
-    label: l.label,
-    items: dedupeItems([...l.items, ...(ex[l.id] || []), ...(ex2[l.id] || [])]),
-  }));
-  // 아예 새로운 단계(예: 과학 4·5단계) 추가
-  for (const nl of (EXTRA_LEVELS[subject] || [])) {
-    levels.push({ id: nl.id, label: nl.label, items: dedupeItems([...nl.items]) });
+  const levels = r.questionBank.levels.map((l) => ({ id: l.id, label: l.label, items: [...l.items] }));
+  // 새 단계 추가
+  for (const src of NEW_LEVEL_SOURCES) {
+    for (const nl of (src[subject] || [])) levels.push({ id: nl.id, label: nl.label, items: [...nl.items] });
   }
+  // 레벨 id로 문제 추가 분배
+  const byId = Object.fromEntries(levels.map((l) => [l.id, l]));
+  for (const src of ADD_SOURCES) {
+    const s = src[subject] || {};
+    for (const id of Object.keys(s)) { if (byId[id]) byId[id].items.push(...s[id]); }
+  }
+  // 같은 질문 중복 제거
+  for (const l of levels) l.items = dedupeItems(l.items);
   return { levels };
 }
 
