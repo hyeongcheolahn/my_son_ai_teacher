@@ -38,7 +38,7 @@ export function speak(text, lang, opts = {}) {
   } catch {}
 }
 
-// 만화 캐릭터처럼 밝고 친근한 목소리(높은 톤)로 읽어 준다 — 배움 설명용
+// 배움 설명용: 자연스럽고 친근한 톤으로 약간 천천히 읽어 준다.
 export function speakFriendly(text) {
-  speak(text, 'ko-KR', { pitch: 1.5, rate: 0.96 });
+  speak(text, 'ko-KR', { pitch: 1.1, rate: 0.9 });
 }
