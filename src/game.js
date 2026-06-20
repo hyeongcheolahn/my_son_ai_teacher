@@ -91,6 +91,7 @@ export class Game {
     on('report-offline-btn', () => this.showOfflineReport());
     on('report-ai-btn', () => this.showAiReport());
     on('sync-save', () => this.saveSyncSettings());
+    on('subject-x', () => { sfx.tap(); $('subject-modal').classList.add('hidden'); });
     // 닫기(✕/닫기) 버튼 — 대상이 없어도 안전하게
     document.querySelectorAll('[data-close]').forEach((b) => {
       b.onclick = () => { const t = $(b.dataset.close); if (t) t.classList.add('hidden'); };
@@ -106,6 +107,8 @@ export class Game {
   // ---- 과목/지방 선택 ----------------------------------------------------
   openSubjectSelect() {
     $('start-screen').classList.add('hidden');
+    // 닫기 ✕는 이미 게임이 진행 중일 때만(=엔진 있음) 보여준다. 첫 실행 땐 반드시 과목을 골라야 함.
+    const x = $('subject-x'); if (x) x.classList.toggle('hidden', !this.engine);
     const grid = $('subject-grid');
     grid.innerHTML = '';
     for (const s of C.SUBJECTS) {
@@ -1096,7 +1099,7 @@ export class Game {
     if (this.state.review.some((r) => r.key === key)) return; // 중복 방지
     this.state.review.push({
       key, text: q.text, answer: q.answer,
-      choices: [...q.choices], skillId: q.skillId, subject: this.state.currentSubject,
+      choices: [...q.choices], skillId: q.skillId, subject: q.subjectTag || this.state.currentSubject,
     });
     if (this.state.review.length > 40) this.state.review.shift(); // 너무 쌓이지 않게
     this.updateReviewBadge();
