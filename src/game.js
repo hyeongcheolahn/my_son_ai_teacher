@@ -10,7 +10,7 @@ import { artUrl } from './data/dex.js';
 import { sfx } from './audio.js';
 import { requestMotionPermission, hasMotion, armThrow, disarmThrow } from './motion.js';
 import { getStrokes } from './data/strokes.js';
-import { speak, speakSupported } from './tts.js';
+import { speak, speakSupported, speakFriendly } from './tts.js';
 import { buildAnalysis, buildReportText } from './analytics.js';
 import { explainQuestion } from './teach.js';
 
@@ -475,14 +475,14 @@ export class Game {
     if (sample && sample.text) body += `<div class="teach-example">📖 이런 문제예요<br><b>${escapeText(sample.text)}</b></div>`;
     if (ex) body += `<div class="teach-explain"><div class="teach-explain-title">${ex.title}</div>${ex.html}</div>`;
     else body += '<div class="teach-explain td-text">차근차근 하나씩 풀어보면 돼요. 화이팅! 💪</div>';
-    this._openTeach(title, body, '좋아, 풀어볼게! ▶', null, sample);
+    this._openTeach(title, body, '좋아, 풀어볼게! ▶', null, sample, null, ex && ex.speak);
   }
 
   showTeach(q, onDone) {
     const ex = explainQuestion(q);
     if (!ex) { if (onDone) onDone(); return; } // 설명 없는 유형(따라쓰기 등)은 그냥 진행
     const body = `<div class="teach-explain"><div class="teach-explain-title">${ex.title}</div>${ex.html}</div>`;
-    this._openTeach('앗, 같이 다시 볼까? 🤔', body, '알겠어! 다시 풀기 ▶', onDone, q, this.lastWrong);
+    this._openTeach('앗, 같이 다시 볼까? 🤔', body, '알겠어! 다시 풀기 ▶', onDone, q, this.lastWrong, ex.speak);
   }
 
   // 🤖 AI 선생님: NAS의 Claude가 이 문제를 아이 눈높이로 더 자세히 설명
@@ -499,7 +499,11 @@ export class Game {
       correctAnswer: q.answer,
       studentAnswer: studentAnswer != null ? studentAnswer : undefined,
     })
-      .then((r) => { out.textContent = (r && r.explain) ? r.explain : (r && r.error) ? '오류: ' + r.error : '응답을 받지 못했어요.'; })
+      .then((r) => {
+        const msg = (r && r.explain) ? r.explain : (r && r.error) ? '오류: ' + r.error : '응답을 받지 못했어요.';
+        out.textContent = msg;
+        if (r && r.explain) { this._teachSpeak = r.explain; if (!sfx.isMuted()) speakFriendly(r.explain); } // AI 답도 친숙한 목소리로
+      })
       .catch((code) => {
         out.textContent = (code === 404 || code === 400)
           ? '🤖 AI 선생님을 쓰려면 NAS 서버를 최신으로 업데이트해 주세요.\n(server.js 교체 후 컨테이너 재시작)'
@@ -507,13 +511,20 @@ export class Game {
       });
   }
 
-  _openTeach(title, bodyHtml, btnLabel, onDone, q, studentAnswer) {
+  _openTeach(title, bodyHtml, btnLabel, onDone, q, studentAnswer, speakText) {
     // 안전장치: 핵심 요소가 없으면(구버전 캐시 등) 모달을 띄우지 않고 그냥 진행 → 게임이 멈추지 않음
     const modal = $('teach-modal'), btn = $('teach-go'), bodyEl = $('teach-body');
     if (!modal || !btn || !bodyEl) { if (onDone) onDone(); return; }
     const t = $('teach-title'); if (t) t.innerHTML = title;
     bodyEl.innerHTML = bodyHtml;
     const ai = $('teach-ai'); if (ai) { ai.classList.add('hidden'); ai.textContent = ''; }
+    // 🔊 다시 듣기 버튼 + 자동 읽어주기(친숙한 목소리)
+    this._teachSpeak = speakText || '';
+    const spk = $('teach-speak');
+    if (spk) {
+      spk.classList.toggle('hidden', !this._teachSpeak || !speakSupported());
+      spk.onclick = () => { sfx.tap(); if (this._teachSpeak) speakFriendly(this._teachSpeak); };
+    }
     const aiBtn = $('teach-ai-btn');
     if (aiBtn) {
       if (q && storage.syncOn()) {
@@ -524,8 +535,9 @@ export class Game {
       }
     }
     btn.textContent = btnLabel;
-    btn.onclick = () => { sfx.tap(); modal.classList.add('hidden'); if (onDone) onDone(); };
+    btn.onclick = () => { sfx.tap(); try { window.speechSynthesis.cancel(); } catch {} modal.classList.add('hidden'); if (onDone) onDone(); };
     modal.classList.remove('hidden');
+    if (this._teachSpeak && speakSupported() && !sfx.isMuted()) setTimeout(() => speakFriendly(this._teachSpeak), 240);
   }
 
   // ---- 따라쓰기 문제 -----------------------------------------------------
