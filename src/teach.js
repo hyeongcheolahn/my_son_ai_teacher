@@ -65,14 +65,16 @@ export function explainQuestion(q) {
   };
 }
 
-function explainArith({ op, a, b, answer }) {
+function explainArith({ op, a, b, answer, item, unit }) {
+  const u = unit || '개';
+  const who = item ? esc(item) + ' ' : '';
   if (op === '+') {
     const visual = (a + b <= 24)
       ? `<div class="td-visual">${group(a, COLORS[0])}<span class="td-op">＋</span>${group(b, COLORS[1])}<span class="td-op">＝</span><b class="td-ans">${answer}</b></div>` : '';
     return {
       title: '💡 더하기는 "모으기"',
-      html: `${visual}<div class="td-text"><b>${a}</b>개에 <b>${b}</b>개를 더 모으면 <b class="td-ans">${answer}</b>개! 🎉<br>${a} ＋ ${b} ＝ ${answer}</div>`,
-      speak: `${a} 더하기 ${b}는 ${answer}예요. ${a}개에 ${b}개를 더 모으면 ${answer}개가 돼요!`,
+      html: `${visual}<div class="td-text">${who}<b>${a}</b>${u}에 <b>${b}</b>${u}를 더 모으면 <b class="td-ans">${answer}</b>${u}! 🎉<br>${a} ＋ ${b} ＝ ${answer}</div>`,
+      speak: `${who}${a} 더하기 ${b}는 ${answer}예요. ${a}${u}에 ${b}${u}를 더 모으면 ${answer}${u}가 돼요!`,
     };
   }
   if (op === '-') {
@@ -80,8 +82,8 @@ function explainArith({ op, a, b, answer }) {
       ? `<div class="td-visual">${takeAway(a, b)}<span class="td-op">＝</span><b class="td-ans">${answer}</b></div>` : '';
     return {
       title: '💡 빼기는 "덜어내기"',
-      html: `${visual}<div class="td-text"><b>${a}</b>개에서 <b>${b}</b>개를 빼면(없애면) <b class="td-ans">${answer}</b>개 남아요.<br>${a} － ${b} ＝ ${answer}</div>`,
-      speak: `${a}에서 ${b}를 빼면 ${answer}예요. ${a}개에서 ${b}개를 덜어내면 ${answer}개가 남아요!`,
+      html: `${visual}<div class="td-text">${who}<b>${a}</b>${u}에서 <b>${b}</b>${u}를 빼면(없애면) <b class="td-ans">${answer}</b>${u} 남아요.<br>${a} － ${b} ＝ ${answer}</div>`,
+      speak: `${who}${a}${u}에서 ${b}${u}를 빼면 ${answer}${u}가 남아요!`,
     };
   }
   if (op === '×') {

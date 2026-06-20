@@ -86,7 +86,7 @@ export class Game {
     on('reset-btn', () => {
       const p = storage.getActiveProfile();
       const who = p ? `'${p.name}'의 ` : '';
-      if (confirm(`정말 ${who}진행도를 모두 초기화할까요?`)) { storage.reset(); location.reload(); }
+      if (confirm(`정말 ${who}학습 진도를 초기화할까요?\n(잡은 포켓몬과 레벨, 도감은 그대로 유지돼요)`)) { storage.reset(); location.reload(); }
     });
     on('report-offline-btn', () => this.showOfflineReport());
     on('report-ai-btn', () => this.showAiReport());

@@ -103,12 +103,19 @@ export function save(state) {
   if (syncOn()) { clearTimeout(_pushT); const id = activeProfileId(); _pushT = setTimeout(() => pushSaveId(id, state, localU(SAVE_PREFIX + id)), 1200); }
 }
 
-// 활성 프로필의 진행도만 초기화(프로필 자체는 유지)
+// 학습 진도만 초기화. 보유 포켓몬·레벨·도감은 그대로 유지한다.
 export function reset() {
-  try { localStorage.removeItem(saveKey()); setLocalU(saveKey(), Date.now()); } catch {}
+  const cur = load();
+  const fresh = DEFAULT();
+  fresh.owned = cur.owned || [];          // 잡은 포켓몬 + 레벨/경험치 유지
+  fresh.activeUid = cur.activeUid || null;
+  fresh.uidSeq = cur.uidSeq || 1;
+  fresh.dexSeen = cur.dexSeen || {};       // 도감 기록 유지
+  fresh.dexCaught = cur.dexCaught || {};
+  try { localStorage.setItem(saveKey(), JSON.stringify(fresh)); setLocalU(saveKey(), Date.now()); } catch {}
   const id = activeProfileId();
-  if (syncOn() && id) pushSaveId(id, DEFAULT(), Date.now());
-  return DEFAULT();
+  if (syncOn() && id) pushSaveId(id, fresh, Date.now());
+  return fresh;
 }
 
 // ---- NAS 동기화 (선택) ----------------------------------------------------
