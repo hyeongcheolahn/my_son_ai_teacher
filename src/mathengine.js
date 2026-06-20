@@ -156,11 +156,14 @@ export function mathQuestion(idx, rng = Math.random) {
 }
 
 // ---- 응용(이야기) 문제 ----------------------------------------------------
-// 아이 이름을 넣어 실생활 상황으로 만든다. 예) "도겸이가 사탕 3개를 가지고 있는데 4개를 더 받고 1개를 먹으면?"
-const STORY_ITEMS = ['사탕', '사과', '딸기', '구슬', '쿠키', '스티커', '젤리', '초콜릿', '풍선', '블록', '곰젤리', '포켓몬 카드'];
-const GET_VERBS = ['더 받았어요', '더 샀어요', '더 주웠어요', '선물로 더 받았어요'];
-const LOSE_VERBS = ['먹었어요', '친구에게 줬어요', '동생에게 줬어요', '잃어버렸어요'];
-const CONTAINERS = ['봉지', '접시', '상자', '바구니', '주머니'];
+// 아이 이름 + 포켓몬을 넣어 실생활 상황으로 만든다. 예) "도겸이가 피카츄 3마리를 가지고 있어요…"
+const THINGS = ['사탕', '사과', '딸기', '구슬', '쿠키', '스티커', '젤리', '초콜릿', '풍선', '곰젤리'];
+const POKEMON = ['피카츄', '꼬부기', '파이리', '이상해씨', '이브이', '푸린', '잠만보', '야돈', '갸라도스', '리자몽', '또가스', '고라파덕', '근육몬', '뮤'];
+const GET_THING = ['더 받았어요', '더 샀어요', '더 주웠어요', '선물로 더 받았어요'];
+const LOSE_THING = ['먹었어요', '친구에게 줬어요', '동생에게 줬어요', '잃어버렸어요'];
+const GET_POKE = ['더 잡았어요', '친구에게 더 받았어요', '교환으로 더 받았어요', '선물로 더 받았어요'];
+const LOSE_POKE = ['다른 친구에게 줬어요', '놓아줬어요', '연구소로 보냈어요'];
+const CONTAINERS = ['봉지', '상자', '바구니', '주머니'];
 
 function hasJong(s) {
   if (!s) return false;
@@ -168,14 +171,24 @@ function hasJong(s) {
   if (c < 0xac00 || c > 0xd7a3) return false;
   return (c - 0xac00) % 28 !== 0;
 }
+// 한국 이름은 성을 떼고 부른다: 안도겸 → 도겸 (3글자 한글이면 성+이름으로 보고 첫 글자 제거)
+function callName(name) {
+  const n = String(name || '').trim();
+  if (/^[가-힣]{3}$/.test(n)) return n.slice(1);
+  return n || '친구';
+}
 // 이름 + 주격(친근형): 도겸이가 / 지호가
 function nameSubject(name) { return name + (hasJong(name) ? '이가' : '가'); }
 function pickOf(rng, arr) { return arr[Math.floor(rng() * arr.length)]; }
 
 export function storyQuestion(idx, rng = Math.random, name = '친구') {
   const skill = SKILLS[Math.min(idx, SKILLS.length - 1)];
-  const nm = nameSubject(name);
-  const item = pickOf(rng, STORY_ITEMS);
+  const nm = nameSubject(callName(name));
+  const usePoke = rng() < 0.55;
+  const item = pickOf(rng, usePoke ? POKEMON : THINGS);
+  const u = usePoke ? '마리' : '개';
+  const GET = usePoke ? GET_POKE : GET_THING;
+  const LOSE = usePoke ? LOSE_POKE : LOSE_THING;
   let text, answer, meta = null;
 
   if (skill.op === '+') {
@@ -184,34 +197,38 @@ export function storyQuestion(idx, rng = Math.random, name = '친구') {
       const sum = a + b;
       const c = 1 + Math.floor(rng() * Math.max(1, Math.floor(sum / 2)));
       answer = Math.max(0, sum - c);
-      text = `${nm} ${item} ${a}개를 가지고 있는데, ${b}개를 ${pickOf(rng, GET_VERBS)}. 그리고 ${c}개를 ${pickOf(rng, LOSE_VERBS)}. 모두 몇 개일까요?`;
+      text = `${nm} ${item} ${a}${u}를 가지고 있는데, ${b}${u}를 ${pickOf(rng, GET)}. 그리고 ${c}${u}를 ${pickOf(rng, LOSE)}. 모두 몇 ${u}일까요?`;
     } else {
       answer = a + b;
-      text = `${nm} ${item} ${a}개를 가지고 있어요. ${b}개를 ${pickOf(rng, GET_VERBS)}. 모두 몇 개일까요?`;
-      meta = { kind: 'arith', op: '+', a, b, answer };
+      text = `${nm} ${item} ${a}${u}를 가지고 있어요. ${b}${u}를 ${pickOf(rng, GET)}. 모두 몇 ${u}일까요?`;
+      meta = { kind: 'arith', op: '+', a, b, answer, item, unit: u };
     }
   } else if (skill.op === '-') {
     const { a, b } = skill.gen(rng);
     if (idx >= 4 && rng() < 0.4 && a - b >= 2) {
       const c = 1 + Math.floor(rng() * Math.max(1, a - b));
       answer = Math.max(0, a - b - c);
-      text = `${nm} ${item} ${a}개가 있어요. ${b}개를 ${pickOf(rng, LOSE_VERBS)}. 또 ${c}개를 ${pickOf(rng, LOSE_VERBS)}. 몇 개 남았을까요?`;
+      text = `${nm} ${item} ${a}${u}가 있어요. ${b}${u}를 ${pickOf(rng, LOSE)}. 또 ${c}${u}를 ${pickOf(rng, LOSE)}. 몇 ${u} 남았을까요?`;
     } else {
       answer = a - b;
-      text = `${nm} ${item} ${a}개가 있어요. ${b}개를 ${pickOf(rng, LOSE_VERBS)}. 몇 개 남았을까요?`;
-      meta = { kind: 'arith', op: '-', a, b, answer };
+      text = `${nm} ${item} ${a}${u}가 있어요. ${b}${u}를 ${pickOf(rng, LOSE)}. 몇 ${u} 남았을까요?`;
+      meta = { kind: 'arith', op: '-', a, b, answer, item, unit: u };
     }
   } else if (skill.op === '×') {
     const { a, b } = skill.gen(rng);
-    const cont = pickOf(rng, CONTAINERS);
     answer = a * b;
-    text = `한 ${cont}에 ${item} ${a}개씩 들어 있어요. ${b}${cont}에는 모두 몇 개일까요?`;
-    meta = { kind: 'arith', op: '×', a, b, answer };
+    if (usePoke) {
+      text = `트레이너 한 명이 ${item} ${a}마리씩 키워요. 트레이너 ${b}명이면 모두 몇 마리일까요?`;
+    } else {
+      const cont = pickOf(rng, CONTAINERS);
+      text = `한 ${cont}에 ${item} ${a}개씩 들어 있어요. ${b}${cont}에는 모두 몇 개일까요?`;
+    }
+    meta = { kind: 'arith', op: '×', a, b, answer, item, unit: u };
   } else { // ÷
     const { a, b } = skill.gen(rng); // a = b * q
     answer = a / b;
-    text = `${nm} ${item} ${a}개를 친구 ${b}명과 똑같이 나누면, 한 명이 몇 개씩 가질까요?`;
-    meta = { kind: 'arith', op: '÷', a, b, answer };
+    text = `${nm} ${item} ${a}${u}를 친구 ${b}명에게 똑같이 나눠 주면, 한 명이 몇 ${u}씩 받을까요?`;
+    meta = { kind: 'arith', op: '÷', a, b, answer, item, unit: u };
   }
   return { skillId: skill.id, skillIdx: idx, text, answer, choices: buildChoices(answer, rng), meta };
 }
