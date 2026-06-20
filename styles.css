@@ -243,8 +243,9 @@ body {
 .review-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .review-empty { font-size: 18px; line-height: 1.6; padding: 24px 8px; }
 
-/* 부모 보기 바로가기 (과목 바꾸기 / 홈) */
+/* 부모 보기 바로가기 (과목 바꾸기 / 홈 / 소리) */
 .nav-row { display: flex; gap: 8px; margin-top: 14px; }
+.nav-full { width: 100%; margin-top: 8px; }
 
 /* 배움(개념 미니레슨 / 틀렸을 때 가르치기) */
 .modal-box.teach { max-width: 460px; }

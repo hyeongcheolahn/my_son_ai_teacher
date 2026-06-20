@@ -73,6 +73,12 @@ export class Game {
     $('region-btn').onclick = () => this.openSubjectSelect();
     $('go-subject').onclick = () => { sfx.tap(); $('parent-modal').classList.add('hidden'); this.openSubjectSelect(); };
     $('go-home').onclick = () => { sfx.tap(); location.reload(); };
+    const soundBtn = $('sound-toggle');
+    if (soundBtn) {
+      const renderSound = () => { soundBtn.textContent = sfx.isMuted() ? '🔇 소리 꺼짐' : '🔊 소리 켜짐'; };
+      renderSound();
+      soundBtn.onclick = () => { const next = !sfx.isMuted(); sfx.setMuted(next); renderSound(); if (!next) sfx.tap(); };
+    }
     $('review-btn').onclick = () => this.openReview();
     $('profile-chip').onclick = () => { sfx.tap(); location.reload(); }; // 친구 바꾸기(프로필 선택 화면으로)
     $('reset-btn').onclick = () => {
@@ -359,19 +365,17 @@ export class Game {
   nextQuestion() {
     // 단계 정답을 다 모았으면 → 다음 일반 문제 대신 "종합 시험" 시작
     if (this.pendingExam && !this.inExam) { this.pendingExam = false; this.startExam(); return; }
-    // 새 단계의 첫 문제 전에 "개념 미니레슨"을 한 번 보여준다(단계별 1회).
-    if (!this.inExam && this.maybeMiniLesson(() => this.nextQuestion())) return;
     this.q = this.engine.nextQuestion();
     this.applyQuestionText(this.q);
     this.qStart = performance.now();
     this.locked = false;
-    if (this.q.kind === 'trace') { this.renderTrace(this.q); this.refreshTransformBtn(); return; }
-    if (this.q.kind === 'clock') { this.renderClock(this.q); this.refreshTransformBtn(); return; }
+    if (this.q.kind === 'trace') { this.renderTrace(this.q); this.refreshTransformBtn(); this._maybeLesson(); return; }
+    if (this.q.kind === 'clock') { this.renderClock(this.q); this.refreshTransformBtn(); this._maybeLesson(); return; }
     const isText = typeof this.q.answer !== 'number';
     const box = $('choices');
     box.className = 'choices';
     box.innerHTML = '';
-    for (const c of this.q.choices) {
+    for (const c of (this.q.choices || [])) {
       const btn = document.createElement('button');
       btn.className = 'choice' + (isText ? ' text' : '');
       btn.textContent = c;
@@ -379,7 +383,11 @@ export class Game {
       box.appendChild(btn);
     }
     this.refreshTransformBtn(); // 변신 가능하면 버튼 표시
+    // 문제·선택지를 먼저 그린 뒤, 새 단계면 개념 미니레슨을 그 위에 띄운다(렌더를 막지 않음).
+    this._maybeLesson();
   }
+
+  _maybeLesson() { try { this.maybeMiniLesson(); } catch (e) { console.error('mini-lesson 오류(무시):', e); } }
 
   answer(value, btn) {
     if (this.locked) return;
@@ -418,18 +426,21 @@ export class Game {
       this.engine.markWrong(this.q); // 같은 문제 재출제 → 맞힐 때까지 진도 정지
       sfx.wrong();
       // 틀리면 "왜 그런지" 먼저 가르쳐 준 뒤, 같은 문제를 다시 풀게 한다.
-      this.showTeach(this.q, () => {
+      // (설명 단계에서 무슨 일이 생겨도 전투는 반드시 이어지도록 안전장치)
+      const cont = () => {
         this.showMessage('이제 같은 문제 다시 도전! 💪', '#ff7a9c', 1100);
         this.enemyCounter(() => this.afterAnswer(promoted, false));
-      });
+      };
+      try { this.showTeach(this.q, cont); } catch (e) { console.error('teach 오류(무시):', e); cont(); }
     }
     this.refreshTop();
     storage.save(this.state);
   }
 
   // ---- 배움(개념 미니레슨 / 틀렸을 때 가르치기) --------------------------
-  // 새 단계의 첫 문제 전에 미니레슨을 단계별 1회 보여준다. 보여줬으면 true 반환.
-  maybeMiniLesson(onDone) {
+  // 새 단계면 미니레슨을 단계별 1회 보여준다(문제는 이미 그려진 상태 — 닫으면 바로 풀 수 있음).
+  maybeMiniLesson() {
+    if (this.inExam) return false;
     const skill = this.engine.currentSkill && this.engine.currentSkill();
     if (!skill) return false;
     const key = (this.state.currentSubject || '') + ':' + skill.id;
@@ -437,11 +448,11 @@ export class Game {
     if (this.state.lessonsSeen[key]) return false;
     this.state.lessonsSeen[key] = true;
     storage.save(this.state);
-    this.showMiniLesson(skill, onDone);
+    this.showMiniLesson(skill);
     return true;
   }
 
-  showMiniLesson(skill, onDone) {
+  showMiniLesson(skill) {
     // 설명 가능한 예시 문제 하나 고르기 (수학은 깔끔한 계산식으로)
     let sample = null;
     try { if (skill && skill.op != null) sample = mathQuestion((this.engine.state && this.engine.state.current) || 0); } catch {}
@@ -458,7 +469,7 @@ export class Game {
     if (sample && sample.text) body += `<div class="teach-example">📖 이런 문제예요<br><b>${escapeText(sample.text)}</b></div>`;
     if (ex) body += `<div class="teach-explain"><div class="teach-explain-title">${ex.title}</div>${ex.html}</div>`;
     else body += '<div class="teach-explain td-text">차근차근 하나씩 풀어보면 돼요. 화이팅! 💪</div>';
-    this._openTeach(title, body, '이제 풀어볼래! ▶', onDone, sample);
+    this._openTeach(title, body, '좋아, 풀어볼게! ▶', null, sample);
   }
 
   showTeach(q, onDone) {
@@ -491,20 +502,24 @@ export class Game {
   }
 
   _openTeach(title, bodyHtml, btnLabel, onDone, q, studentAnswer) {
-    $('teach-title').innerHTML = title;
-    $('teach-body').innerHTML = bodyHtml;
-    const ai = $('teach-ai'); ai.classList.add('hidden'); ai.textContent = '';
+    // 안전장치: 핵심 요소가 없으면(구버전 캐시 등) 모달을 띄우지 않고 그냥 진행 → 게임이 멈추지 않음
+    const modal = $('teach-modal'), btn = $('teach-go'), bodyEl = $('teach-body');
+    if (!modal || !btn || !bodyEl) { if (onDone) onDone(); return; }
+    const t = $('teach-title'); if (t) t.innerHTML = title;
+    bodyEl.innerHTML = bodyHtml;
+    const ai = $('teach-ai'); if (ai) { ai.classList.add('hidden'); ai.textContent = ''; }
     const aiBtn = $('teach-ai-btn');
-    if (q && storage.syncOn()) {
-      aiBtn.classList.remove('hidden');
-      aiBtn.onclick = () => { sfx.tap(); this.askAiTutor(q, studentAnswer); };
-    } else {
-      aiBtn.classList.add('hidden');
+    if (aiBtn) {
+      if (q && storage.syncOn()) {
+        aiBtn.classList.remove('hidden');
+        aiBtn.onclick = () => { sfx.tap(); this.askAiTutor(q, studentAnswer); };
+      } else {
+        aiBtn.classList.add('hidden');
+      }
     }
-    const btn = $('teach-go');
     btn.textContent = btnLabel;
-    btn.onclick = () => { sfx.tap(); $('teach-modal').classList.add('hidden'); if (onDone) onDone(); };
-    $('teach-modal').classList.remove('hidden');
+    btn.onclick = () => { sfx.tap(); modal.classList.add('hidden'); if (onDone) onDone(); };
+    modal.classList.remove('hidden');
   }
 
   // ---- 따라쓰기 문제 -----------------------------------------------------
