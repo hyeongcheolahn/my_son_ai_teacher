@@ -1,13 +1,37 @@
 // 실제 포켓몬 지방 데이터 위의 API 레이어.
 // 외형은 절차적 스타일라이즈드 3D로 근사(공식 모델 미포함).
 import { REGIONS } from './data/regions.js';
+import { EXTRA } from './data/extra.js';
 
 export const SUBJECTS = [
   { key: 'math', label: '수학', region: '관동', emoji: '➕' },
   { key: 'english', label: '영어', region: '칼로스', emoji: '🔤' },
   { key: 'hanja', label: '한자', region: '성도', emoji: '㐀' },
   { key: 'science', label: '과학', region: '호연', emoji: '🔬' },
+  { key: 'random', label: '랜덤', region: '믹스', emoji: '🎲' },
 ];
+
+// 실제 지방(수학~과학) 키. 랜덤 모드 제외.
+export const REAL_SUBJECTS = ['math', 'english', 'hanja', 'science'];
+
+// 문제은행 + 추가 문제(extra.js)를 합친 레벨 묶음을 만든다.
+export function buildBank(subject) {
+  const r = REGIONS[subject];
+  if (!r || !r.questionBank) return null;
+  const ex = EXTRA[subject] || {};
+  const levels = r.questionBank.levels.map((l) => ({
+    id: l.id,
+    label: l.label,
+    items: [...l.items, ...(ex[l.id] || [])],
+  }));
+  return { levels };
+}
+
+// 랜덤 모드 야생: 아무 지방의 야생 포켓몬을 뽑는다.
+export function pickAnyWildDef(rng = Math.random) {
+  const s = REAL_SUBJECTS[Math.floor(rng() * REAL_SUBJECTS.length)];
+  return pickWildDef(s, rng);
+}
 
 // 18타입 색상(파티클·뱃지) + 한국어 라벨
 export const TYPE_META = {
@@ -167,8 +191,11 @@ export function evolveDef(subject, id) {
   return getCreatureDef(subject, d.evolvesToId);
 }
 
-// 도감용: 그 지방 전체(야생 + 전설)
+// 도감용: 그 지방 전체(야생 + 전설). 랜덤 모드는 모든 지방을 합친다.
 export function allDexDefs(subject) {
+  if (subject === 'random' || !REGIONS[subject]) {
+    return REAL_SUBJECTS.flatMap((s) => [...REGIONS[s].wild.map((w) => toDef(w, s)), legendaryDef(s)]);
+  }
   const r = REGIONS[subject];
   return [...r.wild.map((w) => toDef(w, subject)), legendaryDef(subject)];
 }
