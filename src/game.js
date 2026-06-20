@@ -60,37 +60,40 @@ export class Game {
   }
 
   bindUI() {
-    $('start-btn').onclick = () => {
+    // 안전 바인딩: 요소가 없어도(구버전 캐시 등) 에러로 전체 바인딩이 중단되지 않게 한다.
+    const on = (id, handler) => { const el = $(id); if (el) el.onclick = handler; };
+    on('start-btn', () => {
       sfx.unlock(); requestMotionPermission();
       try { if (speakSupported()) window.speechSynthesis.speak(new SpeechSynthesisUtterance(' ')); } catch {} // iOS 음성 잠금 해제
       this.openSubjectSelect();
-    };
-    $('catch-btn').onclick = () => this.throwBall();
-    $('transform-btn').onclick = () => this.doTransform();
-    $('dex-btn').onclick = () => this.openDex();
-    $('parent-btn').onclick = () => this.openParent();
-    $('party-btn').onclick = () => this.openParty();
-    $('region-btn').onclick = () => this.openSubjectSelect();
-    $('go-subject').onclick = () => { sfx.tap(); $('parent-modal').classList.add('hidden'); this.openSubjectSelect(); };
-    $('go-home').onclick = () => { sfx.tap(); location.reload(); };
+    });
+    on('catch-btn', () => this.throwBall());
+    on('transform-btn', () => this.doTransform());
+    on('dex-btn', () => this.openDex());
+    on('parent-btn', () => this.openParent());
+    on('party-btn', () => this.openParty());
+    on('region-btn', () => this.openSubjectSelect());
+    on('go-subject', () => { sfx.tap(); $('parent-modal').classList.add('hidden'); this.openSubjectSelect(); });
+    on('go-home', () => { sfx.tap(); location.reload(); });
     const soundBtn = $('sound-toggle');
     if (soundBtn) {
       const renderSound = () => { soundBtn.textContent = sfx.isMuted() ? '🔇 소리 꺼짐' : '🔊 소리 켜짐'; };
       renderSound();
       soundBtn.onclick = () => { const next = !sfx.isMuted(); sfx.setMuted(next); renderSound(); if (!next) sfx.tap(); };
     }
-    $('review-btn').onclick = () => this.openReview();
-    $('profile-chip').onclick = () => { sfx.tap(); location.reload(); }; // 친구 바꾸기(프로필 선택 화면으로)
-    $('reset-btn').onclick = () => {
+    on('review-btn', () => this.openReview());
+    on('profile-chip', () => { sfx.tap(); location.reload(); }); // 친구 바꾸기(프로필 선택 화면으로)
+    on('reset-btn', () => {
       const p = storage.getActiveProfile();
       const who = p ? `'${p.name}'의 ` : '';
       if (confirm(`정말 ${who}진행도를 모두 초기화할까요?`)) { storage.reset(); location.reload(); }
-    };
-    $('report-offline-btn').onclick = () => this.showOfflineReport();
-    $('report-ai-btn').onclick = () => this.showAiReport();
-    $('sync-save').onclick = () => this.saveSyncSettings();
+    });
+    on('report-offline-btn', () => this.showOfflineReport());
+    on('report-ai-btn', () => this.showAiReport());
+    on('sync-save', () => this.saveSyncSettings());
+    // 닫기(✕/닫기) 버튼 — 대상이 없어도 안전하게
     document.querySelectorAll('[data-close]').forEach((b) => {
-      b.onclick = () => $(b.dataset.close).classList.add('hidden');
+      b.onclick = () => { const t = $(b.dataset.close); if (t) t.classList.add('hidden'); };
     });
     // 모달 바깥(어두운 영역) 탭으로 닫기 — 닫기 버튼이 있는 모달만
     document.querySelectorAll('.modal').forEach((m) => {
