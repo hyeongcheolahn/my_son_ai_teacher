@@ -17,6 +17,7 @@ const DEFAULT = () => ({
   totalCorrect: 0,
   totalWrong: 0,
   review: [],                  // [{ key, text, answer, choices, skillId, subject }] — 오답 복습 목록
+  log: [],                     // [{ t, subject, skillId, correct, ms, kind }] — 문제별 기록(분석용)
 });
 
 // ---- 프로필 관리 ----------------------------------------------------------
@@ -28,7 +29,8 @@ function readProfiles() {
   return { profiles: [], activeId: null };
 }
 function writeProfiles(p) {
-  try { localStorage.setItem(PROFILES_KEY, JSON.stringify(p)); } catch {}
+  try { localStorage.setItem(PROFILES_KEY, JSON.stringify(p)); setLocalU(PROFILES_KEY, Date.now()); } catch {}
+  pushProfiles();
 }
 
 export function listProfiles() { return readProfiles().profiles; }
@@ -95,12 +97,83 @@ export function load() {
   }
 }
 
+let _pushT = null;
 export function save(state) {
-  try { localStorage.setItem(saveKey(), JSON.stringify(state)); } catch {}
+  try { localStorage.setItem(saveKey(), JSON.stringify(state)); setLocalU(saveKey(), Date.now()); } catch {}
+  if (syncOn()) { clearTimeout(_pushT); const id = activeProfileId(); _pushT = setTimeout(() => pushSaveId(id, state, localU(SAVE_PREFIX + id)), 1200); }
 }
 
 // 활성 프로필의 진행도만 초기화(프로필 자체는 유지)
 export function reset() {
-  try { localStorage.removeItem(saveKey()); } catch {}
+  try { localStorage.removeItem(saveKey()); setLocalU(saveKey(), Date.now()); } catch {}
+  const id = activeProfileId();
+  if (syncOn() && id) pushSaveId(id, DEFAULT(), Date.now());
   return DEFAULT();
 }
+
+// ---- NAS 동기화 (선택) ----------------------------------------------------
+const URL_KEY = 'sync_url', TOK_KEY = 'sync_token';
+export function syncUrl() { try { return localStorage.getItem(URL_KEY) || ''; } catch { return ''; } }
+export function syncToken() { try { return localStorage.getItem(TOK_KEY) || ''; } catch { return ''; } }
+export function syncOn() { return !!syncUrl(); }
+export function setSync(url, token) {
+  try {
+    if (url) localStorage.setItem(URL_KEY, String(url).trim().replace(/\/+$/, ''));
+    else localStorage.removeItem(URL_KEY);
+    localStorage.setItem(TOK_KEY, token || '');
+  } catch {}
+}
+function localU(key) { try { return +localStorage.getItem(key + '::u') || 0; } catch { return 0; } }
+function setLocalU(key, v) { try { localStorage.setItem(key + '::u', String(v || Date.now())); } catch {} }
+
+function api(method, pathname, bodyObj) {
+  const base = syncUrl(); if (!base) return Promise.reject('no-url');
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  return fetch(base + pathname, {
+    method, signal: ctrl.signal,
+    headers: { 'content-type': 'application/json', 'x-app-token': syncToken() },
+    body: bodyObj ? JSON.stringify(bodyObj) : undefined,
+  }).then((r) => { clearTimeout(timer); return r.ok ? r.json() : Promise.reject(r.status); });
+}
+
+export function pushProfiles() {
+  if (!syncOn()) return Promise.resolve();
+  const p = readProfiles();
+  return api('PUT', '/api/profiles', { profiles: p.profiles, activeId: p.activeId, updatedAt: localU(PROFILES_KEY) }).catch(() => {});
+}
+function pushSaveId(id, data, u) {
+  if (!syncOn() || !id) return Promise.resolve();
+  return api('PUT', '/api/save?id=' + encodeURIComponent(id), { data, updatedAt: u || Date.now() }).catch(() => {});
+}
+
+// 시작 시 1회: 서버가 더 최신이면 받아오고, 서버가 비어 있으면 올린다.
+export async function pullAll() {
+  if (!syncOn()) return;
+  try {
+    const sp = await api('GET', '/api/profiles');
+    if (sp && sp.profiles && sp.profiles.length && (sp.updatedAt || 0) > localU(PROFILES_KEY)) {
+      localStorage.setItem(PROFILES_KEY, JSON.stringify({ profiles: sp.profiles, activeId: sp.activeId }));
+      setLocalU(PROFILES_KEY, sp.updatedAt);
+    } else if (sp && (!sp.profiles || !sp.profiles.length) && readProfiles().profiles.length) {
+      await pushProfiles();
+    }
+  } catch {}
+  const ids = readProfiles().profiles.map((p) => p.id);
+  for (const id of ids) {
+    const key = SAVE_PREFIX + id;
+    try {
+      const ss = await api('GET', '/api/save?id=' + encodeURIComponent(id));
+      if (ss && ss.data && (ss.updatedAt || 0) > localU(key)) {
+        localStorage.setItem(key, JSON.stringify(ss.data));
+        setLocalU(key, ss.updatedAt);
+      } else if (ss && !ss.data) {
+        const local = localStorage.getItem(key);
+        if (local) await pushSaveId(id, JSON.parse(local), localU(key));
+      }
+    } catch {}
+  }
+}
+
+export function testSync() { return api('GET', '/api/health'); }
+export function aiReport(name, analysis) { return api('POST', '/api/report', { name, analysis }); }

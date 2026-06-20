@@ -35,6 +35,7 @@ export function requireUnlock() {
                autocomplete="off" placeholder="비밀번호" />
         <button id="gate-btn">들어가기</button>
         <div id="gate-error"></div>
+        <button id="gate-sync" type="button">☁️ 동기화 설정</button>
       </div>`;
 
     const style = document.createElement('style');
@@ -56,6 +57,8 @@ export function requireUnlock() {
         color:#fff;background:#3b6cff;border:none;border-radius:12px;cursor:pointer;}
       #gate-overlay button:active{transform:scale(.98);}
       #gate-overlay #gate-error{min-height:20px;margin-top:10px;color:#e34;font-size:13px;}
+      #gate-overlay #gate-sync{margin-top:12px;background:none;border:none;color:#9fb3e0;
+        font-size:13px;text-decoration:underline;cursor:pointer;padding:4px;width:auto;}
     `;
 
     document.head.appendChild(style);
@@ -83,6 +86,18 @@ export function requireUnlock() {
     btn.addEventListener('click', tryUnlock);
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') tryUnlock();
+    });
+
+    // 새 기기에서 NAS 동기화를 미리 설정(프로필을 받아오려면 들어가기 전에 필요)
+    overlay.querySelector('#gate-sync').addEventListener('click', () => {
+      const cur = localStorage.getItem('sync_url') || '';
+      const url = prompt('NAS 서버 주소 (https://...)\n비우면 동기화 끄기', cur);
+      if (url === null) return;
+      const token = prompt('앱 토큰(APP_TOKEN)', localStorage.getItem('sync_token') || '') || '';
+      if (url.trim()) localStorage.setItem('sync_url', url.trim().replace(/\/+$/, ''));
+      else localStorage.removeItem('sync_url');
+      localStorage.setItem('sync_token', token.trim());
+      errorEl.textContent = url.trim() ? '동기화 설정 저장됨. 들어가기를 누르면 동기화돼요.' : '동기화를 껐어요.';
     });
   });
 }

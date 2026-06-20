@@ -1,0 +1,108 @@
+// 수학 포켓 배틀 — NAS용 데이터/분석 서버 (의존성 0, Node 18+ 내장 기능만 사용)
+// 역할: (1) 기기 간 진도·프로필·로그 동기화 저장소  (2) Claude로 학습 분석 리포트 생성
+//
+// 실행:  ANTHROPIC_API_KEY=... APP_TOKEN=비밀번호 node server.js
+// 환경변수:
+//   ANTHROPIC_API_KEY  (필수, 분석 리포트용 Claude API 키)
+//   APP_TOKEN          (필수 권장, 앱이 보낼 공유 비밀번호 — 아무나 못 쓰게)
+//   PORT               (기본 8787)
+//   DATA_DIR           (기본 ./data, 저장 파일 위치)
+//   MODEL              (기본 claude-opus-4-8; 저렴하게 하려면 claude-haiku-4-5)
+//   ALLOW_ORIGIN       (기본 *  — 특정 사이트만 허용하려면 https://...github.io)
+
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const PORT = process.env.PORT || 8787;
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+const APP_TOKEN = process.env.APP_TOKEN || '';
+const API_KEY = process.env.ANTHROPIC_API_KEY || '';
+const MODEL = process.env.MODEL || 'claude-opus-4-8';
+const ALLOW_ORIGIN = process.env.ALLOW_ORIGIN || '*';
+
+fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const safeId = (s) => String(s || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
+const fileFor = (name) => path.join(DATA_DIR, name);
+function readJson(file, fallback) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; } }
+function writeJson(file, obj) { fs.writeFileSync(file, JSON.stringify(obj)); }
+
+function cors(res) {
+  res.setHeader('Access-Control-Allow-Origin', ALLOW_ORIGIN);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'content-type, x-app-token');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
+function send(res, code, obj) { cors(res); res.writeHead(code, { 'content-type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(obj)); }
+function body(req) {
+  return new Promise((resolve) => {
+    let d = ''; req.on('data', (c) => { d += c; if (d.length > 5e6) req.destroy(); });
+    req.on('end', () => { try { resolve(d ? JSON.parse(d) : {}); } catch { resolve({}); } });
+  });
+}
+const authed = (req) => !APP_TOKEN || req.headers['x-app-token'] === APP_TOKEN;
+
+// ---- Claude 분석 리포트 ----------------------------------------------------
+async function makeReport(name, analysis) {
+  if (!API_KEY) return { error: 'NAS 서버에 ANTHROPIC_API_KEY가 설정되지 않았어요.' };
+  const sys = `당신은 다정하고 통찰력 있는 초등 저학년 담임 선생님입니다. 학부모에게 아이의 학습 데이터를 바탕으로 짧고 따뜻한 한국어 리포트를 씁니다.
+규칙: 칭찬과 강점 먼저, 그다음 취약점 2~3가지를 구체적으로(어떤 단원/유형), 마지막에 집에서 해볼 실천 팁 2~3가지. 과장·전문용어 금지, 부드러운 존댓말, 이모지 약간. 6~10문장.`;
+  const user = `아이 이름: ${name || '아이'}\n학습 데이터(JSON):\n${JSON.stringify(analysis)}\n\n이 데이터를 분석해 학부모용 리포트를 작성해줘.`;
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model: MODEL, max_tokens: 2000, system: sys, messages: [{ role: 'user', content: user }] }),
+    });
+    const j = await r.json();
+    if (!r.ok) return { error: `Claude 오류: ${j.error ? j.error.message : r.status}` };
+    const text = (j.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+    return { report: text || '(빈 응답)' };
+  } catch (e) { return { error: '리포트 생성 실패: ' + e.message }; }
+}
+
+const server = http.createServer(async (req, res) => {
+  if (req.method === 'OPTIONS') { cors(res); res.writeHead(204); return res.end(); }
+  const url = new URL(req.url, 'http://x');
+  const p = url.pathname;
+
+  if (p === '/api/health') return send(res, 200, { ok: true });
+
+  if (!authed(req)) return send(res, 401, { error: '인증 실패(앱 토큰 불일치)' });
+
+  // 프로필 목록
+  if (p === '/api/profiles' && req.method === 'GET') {
+    return send(res, 200, readJson(fileFor('profiles.json'), { profiles: [], activeId: null, updatedAt: 0 }));
+  }
+  if (p === '/api/profiles' && req.method === 'PUT') {
+    const b = await body(req); b.updatedAt = b.updatedAt || Date.now();
+    writeJson(fileFor('profiles.json'), b); return send(res, 200, { ok: true });
+  }
+
+  // 개별 세이브
+  if (p === '/api/save' && req.method === 'GET') {
+    const id = safeId(url.searchParams.get('id'));
+    return send(res, 200, readJson(fileFor(`save-${id}.json`), null) || { data: null, updatedAt: 0 });
+  }
+  if (p === '/api/save' && req.method === 'PUT') {
+    const id = safeId(url.searchParams.get('id'));
+    const b = await body(req); b.updatedAt = b.updatedAt || Date.now();
+    writeJson(fileFor(`save-${id}.json`), b); return send(res, 200, { ok: true });
+  }
+
+  // 분석 리포트
+  if (p === '/api/report' && req.method === 'POST') {
+    const b = await body(req);
+    const out = await makeReport(b.name, b.analysis || {});
+    return send(res, out.error ? 502 : 200, out);
+  }
+
+  send(res, 404, { error: 'not found' });
+});
+
+server.listen(PORT, () => {
+  console.log(`[학습서버] 포트 ${PORT}, 데이터 ${DATA_DIR}, 모델 ${MODEL}`);
+  if (!API_KEY) console.log('  ⚠️ ANTHROPIC_API_KEY 미설정 → 동기화는 되지만 AI 리포트는 비활성');
+  if (!APP_TOKEN) console.log('  ⚠️ APP_TOKEN 미설정 → 누구나 접근 가능(집 안 전용이 아니면 꼭 설정하세요)');
+});

@@ -116,6 +116,22 @@
       <div class="modal-box">
         <h2>👨‍👩‍👦 학습 현황</h2>
         <div id="parent-stats"></div>
+
+        <div class="report-box">
+          <div class="report-btns">
+            <button id="report-offline-btn" class="report-btn">📊 빠른 리포트</button>
+            <button id="report-ai-btn" class="report-btn ai">🤖 AI 분석 리포트</button>
+          </div>
+          <pre id="report-out" class="report-out hidden"></pre>
+          <details class="sync-set">
+            <summary>☁️ NAS 동기화 설정</summary>
+            <input id="sync-url" type="url" placeholder="서버 주소 (https://...)" autocomplete="off" />
+            <input id="sync-token" type="text" placeholder="앱 토큰(APP_TOKEN)" autocomplete="off" />
+            <button id="sync-save" class="report-btn">저장 & 연결 테스트</button>
+            <div id="sync-status" class="sync-status"></div>
+          </details>
+        </div>
+
         <button id="reset-btn" class="reset-btn">진행도 초기화</button>
         <button class="close-btn" data-close="parent-modal">닫기</button>
       </div>
