@@ -243,6 +243,19 @@ body {
 .review-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .review-empty { font-size: 18px; line-height: 1.6; padding: 24px 8px; }
 
+/* 학습 리포트 / 동기화 */
+.report-box { margin-top: 16px; border-top: 1px solid rgba(255,255,255,.15); padding-top: 14px; text-align: left; }
+.report-btns { display: flex; gap: 8px; }
+.report-btn { flex: 1; padding: 11px 10px; border: none; border-radius: 12px; font-size: 15px; font-weight: 800; cursor: pointer; color: #fff; background: #2e3a63; }
+.report-btn.ai { background: linear-gradient(180deg, #7b5cff, #5a3ae0); }
+.report-btn:active { transform: translateY(2px); }
+.report-out { white-space: pre-wrap; word-break: break-word; background: rgba(0,0,0,.28); border-radius: 12px; padding: 12px 14px; margin-top: 12px; font-size: 14px; line-height: 1.6; font-family: inherit; max-height: 320px; overflow-y: auto; }
+.sync-set { margin-top: 12px; font-size: 14px; }
+.sync-set summary { cursor: pointer; opacity: .85; }
+.sync-set input { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 10px; border-radius: 10px; border: 1px solid #cdd6e6; font-size: 14px; }
+.sync-set .report-btn { margin-top: 8px; width: 100%; flex: none; }
+.sync-status { margin-top: 8px; font-size: 13px; opacity: .9; }
+
 /* 단계 종합 시험 */
 .exam-progress { font-size: 15px; font-weight: 700; color: #ffd23f; margin-bottom: 10px; }
 .exam-result { padding: 16px 6px; font-size: 18px; line-height: 1.7; }

@@ -11,6 +11,7 @@ import { sfx } from './audio.js';
 import { requestMotionPermission, hasMotion, armThrow, disarmThrow } from './motion.js';
 import { getStrokes } from './data/strokes.js';
 import { speak, speakSupported } from './tts.js';
+import { buildAnalysis, buildReportText } from './analytics.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -76,6 +77,9 @@ export class Game {
       const who = p ? `'${p.name}'의 ` : '';
       if (confirm(`정말 ${who}진행도를 모두 초기화할까요?`)) { storage.reset(); location.reload(); }
     };
+    $('report-offline-btn').onclick = () => this.showOfflineReport();
+    $('report-ai-btn').onclick = () => this.showAiReport();
+    $('sync-save').onclick = () => this.saveSyncSettings();
     document.querySelectorAll('[data-close]').forEach((b) => {
       b.onclick = () => $(b.dataset.close).classList.add('hidden');
     });
@@ -391,6 +395,10 @@ export class Game {
   // 정답/오답 공통 처리. 오답이면 진도가 오르지 않고 같은 문제를 다시 낸다.
   resolveAnswer(correct) {
     const time = performance.now() - this.qStart;
+    // 분석용 로그 기록(최근 1000개 유지)
+    if (!this.state.log) this.state.log = [];
+    this.state.log.push({ t: Date.now(), subject: this.q.subjectTag || this.state.currentSubject, skillId: this.q.skillId, correct, ms: Math.round(time), kind: this.q.kind || null });
+    if (this.state.log.length > 1000) this.state.log.shift();
     const res = this.engine.record(this.q.skillId, correct, time);
     const promoted = null;
     if (res && res.exam) { this.pendingExam = true; this.showMessage('이번 단계 끝! 종합 시험 도전! 📝', '#ffd23f', 1500); }
@@ -906,7 +914,47 @@ export class Game {
     $('dex-modal').classList.remove('hidden');
   }
 
+  // ---- 학습 리포트 / 동기화 설정 -----------------------------------------
+  _profileName() { const p = storage.getActiveProfile(); return p ? p.name : '아이'; }
+
+  showOfflineReport() {
+    sfx.tap();
+    const out = $('report-out');
+    const a = buildAnalysis(this.state);
+    out.textContent = buildReportText(a, this._profileName());
+    out.classList.remove('hidden');
+  }
+
+  showAiReport() {
+    sfx.tap();
+    const out = $('report-out');
+    out.classList.remove('hidden');
+    if (!storage.syncOn()) { out.textContent = '먼저 아래 ☁️ NAS 동기화 설정에서 서버 주소를 연결해 주세요.\n(AI 리포트는 NAS 서버가 Claude로 분석해 줍니다.)'; return; }
+    out.textContent = '🤖 AI 선생님이 분석 중이에요… 잠시만요.';
+    const a = buildAnalysis(this.state);
+    storage.aiReport(this._profileName(), a)
+      .then((r) => { out.textContent = (r && r.report) ? r.report : (r && r.error) ? '오류: ' + r.error : '응답을 받지 못했어요.'; })
+      .catch(() => { out.textContent = 'NAS 서버에 연결하지 못했어요. 주소/토큰과 서버 실행 상태를 확인해 주세요.'; });
+  }
+
+  saveSyncSettings() {
+    const url = $('sync-url').value.trim();
+    const token = $('sync-token').value.trim();
+    const status = $('sync-status');
+    storage.setSync(url, token);
+    if (!url) { status.textContent = '동기화 꺼짐(이 기기에만 저장)'; return; }
+    status.textContent = '연결 확인 중…';
+    storage.testSync()
+      .then(() => { status.textContent = '✅ 연결 성공! 다른 기기에서도 같은 주소·토큰을 넣으면 동기화돼요.'; storage.pullAll().then(() => storage.pushProfiles()); })
+      .catch(() => { status.textContent = '❌ 연결 실패. 주소(https)와 토큰, 서버 실행을 확인해 주세요.'; });
+  }
+
   openParent() {
+    // 동기화 설정 입력칸 채우기 + 리포트 출력 영역 초기화
+    const su = $('sync-url'); if (su) su.value = storage.syncUrl();
+    const st = $('sync-token'); if (st) st.value = storage.syncToken();
+    const ro = $('report-out'); if (ro) { ro.textContent = ''; ro.classList.add('hidden'); }
+    const ss = $('sync-status'); if (ss) ss.textContent = storage.syncOn() ? '연결됨: ' + storage.syncUrl() : '동기화 꺼짐(이 기기에만 저장)';
     const subject = this.state.currentSubject || 'math';
     const sMeta = C.SUBJECTS.find((s) => s.key === subject);
     const wrap = $('parent-stats');
