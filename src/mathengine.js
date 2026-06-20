@@ -152,7 +152,7 @@ export function mathQuestion(idx, rng = Math.random) {
   const skill = SKILLS[Math.min(idx, SKILLS.length - 1)];
   const { a, b } = skill.gen(rng);
   const answer = compute(a, b, skill.op);
-  return { skillId: skill.id, skillIdx: idx, text: `${a} ${skill.op} ${b} = ?`, answer, choices: buildChoices(answer, rng) };
+  return { skillId: skill.id, skillIdx: idx, text: `${a} ${skill.op} ${b} = ?`, answer, choices: buildChoices(answer, rng), meta: { kind: 'arith', op: skill.op, a, b, answer } };
 }
 
 // ---- 응용(이야기) 문제 ----------------------------------------------------
@@ -176,7 +176,7 @@ export function storyQuestion(idx, rng = Math.random, name = '친구') {
   const skill = SKILLS[Math.min(idx, SKILLS.length - 1)];
   const nm = nameSubject(name);
   const item = pickOf(rng, STORY_ITEMS);
-  let text, answer;
+  let text, answer, meta = null;
 
   if (skill.op === '+') {
     const { a, b } = skill.gen(rng);
@@ -188,6 +188,7 @@ export function storyQuestion(idx, rng = Math.random, name = '친구') {
     } else {
       answer = a + b;
       text = `${nm} ${item} ${a}개를 가지고 있어요. ${b}개를 ${pickOf(rng, GET_VERBS)}. 모두 몇 개일까요?`;
+      meta = { kind: 'arith', op: '+', a, b, answer };
     }
   } else if (skill.op === '-') {
     const { a, b } = skill.gen(rng);
@@ -198,18 +199,21 @@ export function storyQuestion(idx, rng = Math.random, name = '친구') {
     } else {
       answer = a - b;
       text = `${nm} ${item} ${a}개가 있어요. ${b}개를 ${pickOf(rng, LOSE_VERBS)}. 몇 개 남았을까요?`;
+      meta = { kind: 'arith', op: '-', a, b, answer };
     }
   } else if (skill.op === '×') {
     const { a, b } = skill.gen(rng);
     const cont = pickOf(rng, CONTAINERS);
     answer = a * b;
     text = `한 ${cont}에 ${item} ${a}개씩 들어 있어요. ${b}${cont}에는 모두 몇 개일까요?`;
+    meta = { kind: 'arith', op: '×', a, b, answer };
   } else { // ÷
     const { a, b } = skill.gen(rng); // a = b * q
     answer = a / b;
     text = `${nm} ${item} ${a}개를 친구 ${b}명과 똑같이 나누면, 한 명이 몇 개씩 가질까요?`;
+    meta = { kind: 'arith', op: '÷', a, b, answer };
   }
-  return { skillId: skill.id, skillIdx: idx, text, answer, choices: buildChoices(answer, rng) };
+  return { skillId: skill.id, skillIdx: idx, text, answer, choices: buildChoices(answer, rng), meta };
 }
 
 function buildChoices(answer, rng) {
