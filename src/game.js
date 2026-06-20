@@ -1,5 +1,5 @@
 import { BattleScene } from './scene.js';
-import { MathEngine } from './mathengine.js';
+import { MathEngine, mathQuestion } from './mathengine.js';
 import { BankEngine } from './bankengine.js';
 import { RandomEngine } from './randomengine.js';
 import * as C from './creatures.js';
@@ -12,6 +12,7 @@ import { requestMotionPermission, hasMotion, armThrow, disarmThrow } from './mot
 import { getStrokes } from './data/strokes.js';
 import { speak, speakSupported } from './tts.js';
 import { buildAnalysis, buildReportText } from './analytics.js';
+import { explainQuestion } from './teach.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -358,6 +359,8 @@ export class Game {
   nextQuestion() {
     // 단계 정답을 다 모았으면 → 다음 일반 문제 대신 "종합 시험" 시작
     if (this.pendingExam && !this.inExam) { this.pendingExam = false; this.startExam(); return; }
+    // 새 단계의 첫 문제 전에 "개념 미니레슨"을 한 번 보여준다(단계별 1회).
+    if (!this.inExam && this.maybeMiniLesson(() => this.nextQuestion())) return;
     this.q = this.engine.nextQuestion();
     this.applyQuestionText(this.q);
     this.qStart = performance.now();
@@ -413,11 +416,64 @@ export class Game {
       this.addReview(this.q);
       this.engine.markWrong(this.q); // 같은 문제 재출제 → 맞힐 때까지 진도 정지
       sfx.wrong();
-      this.showMessage('아쉬워! 같은 문제 다시 도전!', '#ff7a9c', 1100);
-      this.enemyCounter(() => this.afterAnswer(promoted, false));
+      // 틀리면 "왜 그런지" 먼저 가르쳐 준 뒤, 같은 문제를 다시 풀게 한다.
+      this.showTeach(this.q, () => {
+        this.showMessage('이제 같은 문제 다시 도전! 💪', '#ff7a9c', 1100);
+        this.enemyCounter(() => this.afterAnswer(promoted, false));
+      });
     }
     this.refreshTop();
     storage.save(this.state);
+  }
+
+  // ---- 배움(개념 미니레슨 / 틀렸을 때 가르치기) --------------------------
+  // 새 단계의 첫 문제 전에 미니레슨을 단계별 1회 보여준다. 보여줬으면 true 반환.
+  maybeMiniLesson(onDone) {
+    const skill = this.engine.currentSkill && this.engine.currentSkill();
+    if (!skill) return false;
+    const key = (this.state.currentSubject || '') + ':' + skill.id;
+    if (!this.state.lessonsSeen) this.state.lessonsSeen = {};
+    if (this.state.lessonsSeen[key]) return false;
+    this.state.lessonsSeen[key] = true;
+    storage.save(this.state);
+    this.showMiniLesson(skill, onDone);
+    return true;
+  }
+
+  showMiniLesson(skill, onDone) {
+    // 설명 가능한 예시 문제 하나 고르기 (수학은 깔끔한 계산식으로)
+    let sample = null;
+    try { if (skill && skill.op != null) sample = mathQuestion((this.engine.state && this.engine.state.current) || 0); } catch {}
+    if (!explainQuestion(sample)) {
+      for (let i = 0; i < 8; i++) {
+        const s = this.engine.nextQuestion();
+        if (!sample) sample = s;
+        if (explainQuestion(s)) { sample = s; break; }
+      }
+    }
+    const ex = explainQuestion(sample);
+    const title = '🎓 새로운 걸 배워요: ' + (skill && skill.label ? skill.label : '');
+    let body = '';
+    if (sample && sample.text) body += `<div class="teach-example">📖 이런 문제예요<br><b>${escapeText(sample.text)}</b></div>`;
+    if (ex) body += `<div class="teach-explain"><div class="teach-explain-title">${ex.title}</div>${ex.html}</div>`;
+    else body += '<div class="teach-explain td-text">차근차근 하나씩 풀어보면 돼요. 화이팅! 💪</div>';
+    this._openTeach(title, body, '이제 풀어볼래! ▶', onDone);
+  }
+
+  showTeach(q, onDone) {
+    const ex = explainQuestion(q);
+    if (!ex) { if (onDone) onDone(); return; } // 설명 없는 유형(따라쓰기 등)은 그냥 진행
+    const body = `<div class="teach-explain"><div class="teach-explain-title">${ex.title}</div>${ex.html}</div>`;
+    this._openTeach('앗, 같이 다시 볼까? 🤔', body, '알겠어! 다시 풀기 ▶', onDone);
+  }
+
+  _openTeach(title, bodyHtml, btnLabel, onDone) {
+    $('teach-title').innerHTML = title;
+    $('teach-body').innerHTML = bodyHtml;
+    const btn = $('teach-go');
+    btn.textContent = btnLabel;
+    btn.onclick = () => { sfx.tap(); $('teach-modal').classList.add('hidden'); if (onDone) onDone(); };
+    $('teach-modal').classList.remove('hidden');
   }
 
   // ---- 따라쓰기 문제 -----------------------------------------------------
