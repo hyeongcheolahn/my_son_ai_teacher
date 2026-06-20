@@ -13,6 +13,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const PORT = process.env.PORT || 8787;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
@@ -20,8 +21,14 @@ const APP_TOKEN = process.env.APP_TOKEN || '';
 const API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const MODEL = process.env.MODEL || 'claude-opus-4-8';
 const ALLOW_ORIGIN = process.env.ALLOW_ORIGIN || '*';
+// ElevenLabs 음성(자연스러운 읽어주기) — 키가 있을 때만 작동
+const TTS_KEY = process.env.ELEVENLABS_API_KEY || '';
+const TTS_VOICE = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM'; // 기본 Rachel(원하는 한국어 음성 ID로 바꾸세요)
+const TTS_MODEL = process.env.ELEVENLABS_MODEL || 'eleven_multilingual_v2';
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
+const TTS_DIR = path.join(DATA_DIR, 'tts');
+try { fs.mkdirSync(TTS_DIR, { recursive: true }); } catch {}
 
 const safeId = (s) => String(s || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
 const fileFor = (name) => path.join(DATA_DIR, name);
@@ -91,12 +98,32 @@ async function makeExplain(b) {
   } catch (e) { return { error: '설명 생성 실패: ' + e.message }; }
 }
 
+// ---- ElevenLabs 음성(읽어주기) — 같은 문장은 파일 캐시로 재사용 -------------
+async function makeTts(text, voice) {
+  if (!TTS_KEY) return { status: 501, error: 'NAS 서버에 ELEVENLABS_API_KEY가 설정되지 않았어요.' };
+  const vid = (voice && /^[A-Za-z0-9]+$/.test(voice)) ? voice : TTS_VOICE;
+  const hash = crypto.createHash('sha1').update(vid + '|' + TTS_MODEL + '|' + text).digest('hex');
+  const cacheFile = path.join(TTS_DIR, hash + '.mp3');
+  try { const buf = fs.readFileSync(cacheFile); if (buf && buf.length) return { status: 200, audio: buf }; } catch {}
+  try {
+    const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${vid}?output_format=mp3_44100_128`, {
+      method: 'POST',
+      headers: { 'xi-api-key': TTS_KEY, 'content-type': 'application/json', accept: 'audio/mpeg' },
+      body: JSON.stringify({ text, model_id: TTS_MODEL, voice_settings: { stability: 0.45, similarity_boost: 0.8, style: 0.25, use_speaker_boost: true } }),
+    });
+    if (!r.ok) { const t = await r.text().catch(() => ''); return { status: 502, error: `TTS 오류 ${r.status}: ${t.slice(0, 200)}` }; }
+    const buf = Buffer.from(await r.arrayBuffer());
+    try { fs.writeFileSync(cacheFile, buf); } catch {}
+    return { status: 200, audio: buf };
+  } catch (e) { return { status: 502, error: '음성 생성 실패: ' + e.message }; }
+}
+
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { cors(res); res.writeHead(204); return res.end(); }
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
 
-  if (p === '/api/health') return send(res, 200, { ok: true, explain: true });
+  if (p === '/api/health') return send(res, 200, { ok: true, explain: !!API_KEY, tts: !!TTS_KEY });
 
   if (!authed(req)) return send(res, 401, { error: '인증 실패(앱 토큰 불일치)' });
 
@@ -133,6 +160,19 @@ const server = http.createServer(async (req, res) => {
     if (!b || !b.question) return send(res, 400, { error: '문제 정보가 없어요.' });
     const out = await makeExplain(b);
     return send(res, out.error ? 502 : 200, out);
+  }
+
+  // 읽어주기(자연스러운 음성) — mp3 반환
+  if (p === '/api/tts' && req.method === 'POST') {
+    const b = await body(req);
+    if (!b || !b.text) return send(res, 400, { error: 'text 없음' });
+    const out = await makeTts(String(b.text).slice(0, 800), b.voice);
+    if (out.status === 200) {
+      cors(res);
+      res.writeHead(200, { 'content-type': 'audio/mpeg', 'cache-control': 'public, max-age=86400' });
+      return res.end(out.audio);
+    }
+    return send(res, out.status, { error: out.error || 'TTS 실패' });
   }
 
   send(res, 404, { error: 'not found' });

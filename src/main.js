@@ -12,6 +12,7 @@ window.addEventListener('DOMContentLoaded', () => {
   requireUnlock().then(async () => {
     storage.migrateLegacy();      // 예전 단일 세이브 → 기본 프로필로 이전(최초 1회)
     try { await storage.pullAll(); } catch {} // NAS 동기화(설정돼 있으면) — 실패해도 오프라인 진행
+    storage.testSync().catch(() => {}); // 서버 기능(AI·음성) 사용 가능 여부 확인(캐시)
     chooseProfile().then(() => {  // 이름 + 캐릭터 선택/생성
       window.__game = new Game();
     });
