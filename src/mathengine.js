@@ -1,6 +1,7 @@
 // 적응형 난이도 엔진.
 // 미취학(한 자리 덧셈)부터 시작해, 한 단계에서 정답을 충분히 많이 맞히면 다음 단계로 진급한다.
 // (예전: 정답률 기반으로 너무 빨리 진급 → 지금: 정답 개수 기반으로 천천히, 틀리면 진도 정지)
+import { SHAPES_STAGES } from './data/extra4.js';
 
 export const SKILLS = [
   { id: 'add1', label: '한 자리 덧셈', op: '+', gen: (r) => pair(r, 1, 5, 1, 5) },
@@ -39,7 +40,7 @@ export class MathEngine {
   currentSkill() { return SKILLS[this.state.current]; }
   skillsCount() { return SKILLS.length; }
 
-  // 다음 문제: 직전에 틀렸으면 같은 문제 재출제(진도 정지), 아니면 80% 현재 / 20% 복습
+  // 다음 문제: 직전에 틀렸으면 같은 문제 재출제(진도 정지), 아니면 계산/응용/도형·시계 섞어서
   nextQuestion() {
     if (this._repeat) {
       const q = this._repeat; this._repeat = null;
@@ -47,9 +48,23 @@ export class MathEngine {
     }
     let idx = this.state.current;
     if (this.state.current > 0 && this.rng() < 0.2) idx = Math.floor(this.rng() * this.state.current); // 복습
-    // 약 40% 확률로 응용(이야기) 문제
-    if (this.rng() < 0.4) return storyQuestion(idx, this.rng, this.name);
-    return mathQuestion(idx, this.rng);
+    const r = this.rng();
+    if (r < 0.22) return this.shapesQuestion();              // 도형·시계
+    if (r < 0.55) return storyQuestion(idx, this.rng, this.name); // 응용(이야기)
+    return mathQuestion(idx, this.rng);                       // 계산
+  }
+
+  // 도형·시계 문제(현재 진도에 맞춰 난이도 선택). 진도는 현재 수학 단계로 기록된다.
+  shapesQuestion() {
+    const stage = Math.min(SHAPES_STAGES.length - 1, Math.floor(this.state.current / 2));
+    const pool = SHAPES_STAGES[stage];
+    const item = pool[Math.floor(this.rng() * pool.length)];
+    return {
+      skillId: this.currentSkill().id, skillIdx: this.state.current,
+      text: item.prompt, answer: item.answer,
+      choices: shuffle([...item.choices], this.rng),
+      kind: item.kind || null, clock: item.clock || null,
+    };
   }
 
   // 틀린 문제를 기억 → 다음에 같은 문제를 다시 낸다.

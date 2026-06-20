@@ -4,9 +4,10 @@ import { REGIONS } from './data/regions.js';
 import { EXTRA } from './data/extra.js';
 import { EXTRA2, EXTRA_LEVELS } from './data/extra2.js';
 import { EXTRA3, EXTRA_LEVELS3 } from './data/extra3.js';
+import { EXTRA4 } from './data/extra4.js';
 
 export const SUBJECTS = [
-  { key: 'math', label: '수학', region: '관동', emoji: '➕' },
+  { key: 'math', label: '수학 (+도형·시계)', region: '관동', emoji: '➕' },
   { key: 'english', label: '영어', region: '칼로스', emoji: '🔤' },
   { key: 'hanja', label: '한자', region: '성도', emoji: '㐀' },
   { key: 'science', label: '과학', region: '호연', emoji: '🔬' },
@@ -16,13 +17,18 @@ export const SUBJECTS = [
 // 실제 지방(수학~과학) 키. 랜덤 모드 제외.
 export const REAL_SUBJECTS = ['math', 'english', 'hanja', 'science'];
 
+// 자체 포켓몬 지방이 없는 과목은 다른 지방의 포켓몬을 빌려 쓴다.(현재 없음)
+const CREATURE_ALIAS = {};
+export function creatureSubject(subject) { return CREATURE_ALIAS[subject] || subject; }
+
 // 문제은행 + 추가 문제(extra.js, extra2.js)를 합친 레벨 묶음을 만든다.
 // 중복(같은 질문)은 제거한다.
 function dedupeItems(items) {
   const seen = new Set();
   const out = [];
   for (const it of items) {
-    const key = it.prompt;
+    // 같은 질문이라도 시계(시각)·정답이 다르면 다른 문제로 본다
+    const key = it.prompt + '|' + (it.answer == null ? '' : it.answer) + '|' + (it.clock ? JSON.stringify(it.clock) : '') + (it.glyph || '');
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(it);
@@ -30,13 +36,15 @@ function dedupeItems(items) {
   return out;
 }
 
-const ADD_SOURCES = [EXTRA, EXTRA2, EXTRA3];          // 기존 단계에 문제 추가
-const NEW_LEVEL_SOURCES = [EXTRA_LEVELS, EXTRA_LEVELS3]; // 새 단계 추가
+const ADD_SOURCES = [EXTRA, EXTRA2, EXTRA3, EXTRA4];          // 기존 단계에 문제 추가
+const NEW_LEVEL_SOURCES = [EXTRA_LEVELS, EXTRA_LEVELS3];      // 새 단계 추가
 
 export function buildBank(subject) {
   const r = REGIONS[subject];
-  if (!r || !r.questionBank) return null;
-  const levels = r.questionBank.levels.map((l) => ({ id: l.id, label: l.label, items: [...l.items] }));
+  // 자체 지방이 없는 과목(도형·시계)은 EXTRA_LEVELS로만 구성한다.
+  const levels = (r && r.questionBank)
+    ? r.questionBank.levels.map((l) => ({ id: l.id, label: l.label, items: [...l.items] }))
+    : [];
   // 새 단계 추가
   for (const src of NEW_LEVEL_SOURCES) {
     for (const nl of (src[subject] || [])) levels.push({ id: nl.id, label: nl.label, items: [...nl.items] });
@@ -49,13 +57,45 @@ export function buildBank(subject) {
   }
   // 같은 질문 중복 제거
   for (const l of levels) l.items = dedupeItems(l.items);
-  return { levels };
+  return levels.length ? { levels } : null;
 }
 
 // 랜덤 모드 야생: 아무 지방의 야생 포켓몬을 뽑는다.
 export function pickAnyWildDef(rng = Math.random) {
   const s = REAL_SUBJECTS[Math.floor(rng() * REAL_SUBJECTS.length)];
   return pickWildDef(s, rng);
+}
+
+function _shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+// 중간중간 나오는 포켓몬 상식 퀴즈. {q, answer, choices, image(id)}
+export function makePokemonQuiz(rng = Math.random) {
+  const sub = REAL_SUBJECTS[Math.floor(rng() * REAL_SUBJECTS.length)];
+  const wild = REGIONS[sub].wild;
+  const pick = () => toDef(wild[Math.floor(rng() * wild.length)], sub);
+  const d = pick();
+  const modes = ['type', 'name'];
+  if (d.evolvesToId) modes.push('evolve');
+  const mode = modes[Math.floor(rng() * modes.length)];
+
+  if (mode === 'type') {
+    const ans = typeLabel(d.type);
+    const all = Object.values(TYPE_META).map((v) => v.label);
+    const set = new Set([ans]);
+    let g = 0; while (set.size < 4 && g++ < 50) set.add(all[Math.floor(rng() * all.length)]);
+    return { q: `${d.name}의 타입은 무엇일까요?`, answer: ans, choices: _shuffle([...set]), image: d.id };
+  }
+  if (mode === 'evolve') {
+    const ev = getCreatureDef(sub, d.evolvesToId);
+    const ans = ev.name;
+    const set = new Set([ans]);
+    let g = 0; while (set.size < 4 && g++ < 50) set.add(pick().name);
+    return { q: `${d.name}은(는) 무엇으로 진화할까요?`, answer: ans, choices: _shuffle([...set]), image: d.id };
+  }
+  const ans = d.name;
+  const set = new Set([ans]);
+  let g = 0; while (set.size < 4 && g++ < 50) set.add(pick().name);
+  return { q: '이 포켓몬의 이름은 무엇일까요?', answer: ans, choices: _shuffle([...set]), image: d.id };
 }
 
 // 18타입 색상(파티클·뱃지) + 한국어 라벨

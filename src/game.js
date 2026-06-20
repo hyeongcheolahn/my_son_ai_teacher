@@ -10,6 +10,7 @@ import { artUrl } from './data/dex.js';
 import { sfx } from './audio.js';
 import { requestMotionPermission, hasMotion, armThrow, disarmThrow } from './motion.js';
 import { getStrokes } from './data/strokes.js';
+import { speak, speakSupported } from './tts.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -57,7 +58,11 @@ export class Game {
   }
 
   bindUI() {
-    $('start-btn').onclick = () => { sfx.unlock(); requestMotionPermission(); this.openSubjectSelect(); };
+    $('start-btn').onclick = () => {
+      sfx.unlock(); requestMotionPermission();
+      try { if (speakSupported()) window.speechSynthesis.speak(new SpeechSynthesisUtterance(' ')); } catch {} // iOS 음성 잠금 해제
+      this.openSubjectSelect();
+    };
     $('catch-btn').onclick = () => this.throwBall();
     $('transform-btn').onclick = () => this.doTransform();
     $('dex-btn').onclick = () => this.openDex();
@@ -109,8 +114,9 @@ export class Game {
     else this.engine = new BankEngine(C.buildBank(subject), this.state.subjects[subject]);
 
     this.ensureStarter(subject);
-    // 출전 포켓몬 지정 (랜덤 모드는 어떤 포켓몬이든 출전 가능)
-    const mine = subject === 'random' ? this.state.owned : this.state.owned.filter((o) => o.subject === subject);
+    // 출전 포켓몬 지정 (랜덤/도형 모드는 다른 지방 포켓몬을 빌려 씀)
+    const cs = C.creatureSubject(subject);
+    const mine = subject === 'random' ? this.state.owned : this.state.owned.filter((o) => o.subject === cs);
     if (mine.length && !mine.some((o) => o.uid === this.state.activeUid)) this.state.activeUid = mine[0].uid;
 
     this.hideAllModals();
@@ -126,9 +132,10 @@ export class Game {
       if (!this.state.owned.length) { const st = C.starterDef('math'); this.addOwned('math', st.id, true); }
       return;
     }
-    if (!this.state.owned.some((o) => o.subject === subject)) {
-      const st = C.starterDef(subject);
-      this.addOwned(subject, st.id, true);
+    const cs = C.creatureSubject(subject);
+    if (!this.state.owned.some((o) => o.subject === cs)) {
+      const st = C.starterDef(cs);
+      this.addOwned(cs, st.id, true);
     }
   }
 
@@ -287,14 +294,15 @@ export class Game {
     const subject = this.state.currentSubject;
     const graduation = this.engine.graduationReady && this.engine.graduationReady() && !this.state.graduated[subject];
 
+    const cs = C.creatureSubject(subject);
     let def, isLegendary = false;
     if (graduation) {
-      def = C.legendaryDef(subject);
+      def = C.legendaryDef(cs);
       isLegendary = true;
     } else if (subject === 'random') {
       def = C.pickAnyWildDef();
     } else {
-      def = C.pickWildDef(subject);
+      def = C.pickWildDef(cs);
     }
     // 야생 레벨 = 현재 문제 난이도 단계에 비례 (전설은 훨씬 높음)
     const stage = this.engine.state.current || 0;
@@ -318,18 +326,38 @@ export class Game {
     setTimeout(() => this.nextQuestion(), isLegendary ? 1700 : 1000);
   }
 
+  // 문제 글 + 읽어주기(🔊) 버튼 표시. 영어 단어/따라쓰기는 자동으로 읽어 준다.
+  applyQuestionText(q) {
+    const qEl = $('question');
+    const len = String(q.text).length;
+    qEl.classList.toggle('small', len > 12 && len <= 34);
+    qEl.classList.toggle('tiny', len > 34);
+    const sp = this.questionSpeak(q);
+    qEl.innerHTML = escapeText(q.text) + (sp ? ' <button class="speak-btn" title="읽어주기">🔊</button>' : '');
+    if (sp) {
+      qEl.querySelector('.speak-btn').onclick = (e) => { e.stopPropagation(); speak(sp.text, sp.lang); };
+      if (sp.auto) setTimeout(() => speak(sp.text, sp.lang), 280);
+    }
+  }
+
+  // 무엇을 읽어줄지 결정: 영어 단어가 있으면 그 단어(영어 발음), 따라쓰기는 글자, 그 외엔 문제 전체
+  questionSpeak(q) {
+    if (!speakSupported()) return null;
+    if (q.kind === 'trace') return { text: q.glyph, lang: /[A-Za-z]/.test(q.glyph) ? 'en-US' : 'ko-KR', auto: true };
+    const m = String(q.text).match(/'([A-Za-z][A-Za-z .'-]*)'/);
+    if (m) return { text: m[1], lang: 'en-US', auto: true };
+    return { text: q.text, lang: 'ko-KR', auto: false };
+  }
+
   nextQuestion() {
     // 단계 정답을 다 모았으면 → 다음 일반 문제 대신 "종합 시험" 시작
     if (this.pendingExam && !this.inExam) { this.pendingExam = false; this.startExam(); return; }
     this.q = this.engine.nextQuestion();
-    const qEl = $('question');
-    qEl.textContent = this.q.text;
-    const qlen = String(this.q.text).length;
-    qEl.classList.toggle('small', qlen > 12 && qlen <= 34);
-    qEl.classList.toggle('tiny', qlen > 34); // 응용(이야기) 문제처럼 긴 문장
+    this.applyQuestionText(this.q);
     this.qStart = performance.now();
     this.locked = false;
     if (this.q.kind === 'trace') { this.renderTrace(this.q); this.refreshTransformBtn(); return; }
+    if (this.q.kind === 'clock') { this.renderClock(this.q); this.refreshTransformBtn(); return; }
     const isText = typeof this.q.answer !== 'number';
     const box = $('choices');
     box.className = 'choices';
@@ -543,6 +571,54 @@ export class Game {
     ctx.restore();
   }
 
+  // ---- 시계 문제 -------------------------------------------------------
+  renderClock(q) {
+    const box = $('choices');
+    box.className = 'choices clock';
+    box.innerHTML = '<canvas class="clock-canvas" width="220" height="220"></canvas><div class="clock-opts"></div>';
+    this.drawClock(box.querySelector('.clock-canvas'), q.clock);
+    const opts = box.querySelector('.clock-opts');
+    for (const c of q.choices) {
+      const btn = document.createElement('button');
+      btn.className = 'choice text';
+      btn.textContent = c;
+      btn.onclick = () => this.answer(c, btn);
+      opts.appendChild(btn);
+    }
+  }
+
+  drawClock(canvas, clock) {
+    if (!canvas || !clock) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, R = W / 2, cx = R, cy = R;
+    ctx.clearRect(0, 0, W, W);
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = '#1b2a4a'; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.arc(cx, cy, R - 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    // 분 눈금
+    for (let i = 0; i < 60; i++) {
+      const a = (i / 60) * Math.PI * 2;
+      const big = i % 5 === 0;
+      ctx.lineWidth = big ? 2.5 : 1; ctx.strokeStyle = '#9aa6c4';
+      const r1 = R - 12, r2 = big ? R - 22 : R - 16;
+      ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); ctx.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2); ctx.stroke();
+    }
+    // 숫자
+    ctx.fillStyle = '#1b2a4a'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `bold ${Math.floor(W * 0.1)}px system-ui, sans-serif`;
+    for (let n = 1; n <= 12; n++) {
+      const a = (n / 12) * Math.PI * 2 - Math.PI / 2;
+      ctx.fillText(String(n), cx + Math.cos(a) * (R - 34), cy + Math.sin(a) * (R - 34));
+    }
+    const { h, m, s, hand } = clock;
+    const hand2 = (a, len, w, col) => { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * len, cy + Math.sin(a) * len); ctx.stroke(); };
+    const hourA = (((h % 12) + (m || 0) / 60) / 12) * Math.PI * 2 - Math.PI / 2;
+    const minA = ((m || 0) / 60) * Math.PI * 2 - Math.PI / 2;
+    hand2(hourA, R * 0.48, 7, '#1b2a4a');   // 짧은바늘(시)
+    hand2(minA, R * 0.72, 5, '#2e6bff');     // 긴바늘(분)
+    if (hand === 'hms' && s != null) hand2((s / 60) * Math.PI * 2 - Math.PI / 2, R * 0.8, 2, '#e53935'); // 초바늘
+    ctx.fillStyle = '#1b2a4a'; ctx.beginPath(); ctx.arc(cx, cy, 7, 0, Math.PI * 2); ctx.fill();
+  }
+
   doAttack(done) {
     sfx.attack();
     const allyDef = this.activeDef();
@@ -692,7 +768,44 @@ export class Game {
   }
 
   betweenBattle() {
-    this.maybeEvolveThen(() => this.spawnWild());
+    this.maybeEvolveThen(() => this.maybePokemonQuiz(() => this.spawnWild()));
+  }
+
+  // ---- 포켓몬 상식 퀴즈(중간중간 등장) -----------------------------------
+  maybePokemonQuiz(cb) {
+    if (Math.random() < 0.28) this.startPokemonQuiz(cb);
+    else cb();
+  }
+
+  startPokemonQuiz(cb) {
+    const quiz = C.makePokemonQuiz();
+    this._pquizCb = cb;
+    sfx.tap();
+    const body = $('pquiz-body');
+    body.innerHTML = `
+      <img class="pquiz-img" src="${artUrl(quiz.image)}" alt="포켓몬" />
+      <div class="pquiz-q">${escapeText(quiz.q)}</div>
+      <div class="review-choices">
+        ${quiz.choices.map((c) => `<button class="choice text" data-c="${escapeAttr(c)}">${escapeText(c)}</button>`).join('')}
+      </div>`;
+    body.querySelectorAll('.choice').forEach((btn) => {
+      btn.onclick = () => this.answerPokemonQuiz(quiz, btn.dataset.c, btn, body);
+    });
+    $('pquiz-modal').classList.remove('hidden');
+  }
+
+  answerPokemonQuiz(quiz, value, btn, body) {
+    const buttons = [...body.querySelectorAll('.choice')];
+    buttons.forEach((b) => (b.disabled = true));
+    const correct = String(value) === String(quiz.answer);
+    if (correct) { btn.classList.add('correct'); sfx.correct(); }
+    else { btn.classList.add('wrong'); buttons.find((b) => String(b.dataset.c) === String(quiz.answer))?.classList.add('correct'); sfx.wrong(); }
+    setTimeout(() => {
+      $('pquiz-modal').classList.add('hidden');
+      if (correct) { this.showMessage('🎓 포켓몬 박사: 정답! 경험치 보너스 +3', '#ffd23f', 1600); this.gainXp(3); }
+      const cb = this._pquizCb; this._pquizCb = null;
+      if (cb) cb();
+    }, correct ? 950 : 1500);
   }
 
   // ---- 진화 -------------------------------------------------------------
@@ -925,12 +1038,15 @@ export class Game {
     const choices = shuffleArr([...item.choices]);
     const isText = typeof item.answer !== 'number';
     const qlen = String(item.text).length;
+    const isClock = item.kind === 'clock';
     body.innerHTML = `
       <div class="exam-progress">시험 ${this.examPos + 1} / ${this.examQs.length} · 맞은 개수 ${this.examScore}</div>
       <div class="review-q${qlen > 34 ? ' tiny' : qlen > 12 ? ' small' : ''}">${escapeText(item.text)}</div>
+      ${isClock ? '<canvas class="clock-canvas" width="200" height="200"></canvas>' : ''}
       <div class="review-choices">
         ${choices.map((c) => `<button class="choice${isText ? ' text' : ''}" data-c="${escapeAttr(c)}">${escapeText(c)}</button>`).join('')}
       </div>`;
+    if (isClock) this.drawClock(body.querySelector('.clock-canvas'), item.clock);
     body.querySelectorAll('.choice').forEach((btn) => {
       btn.onclick = () => this.answerExam(item, btn.dataset.c, btn, body);
     });

@@ -36,7 +36,7 @@ export class BankEngine {
     return {
       skillId: lvl.id, skillIdx: idx, text: item.prompt, answer: item.answer,
       choices: item.choices ? shuffle([...item.choices], this.rng) : undefined,
-      kind: item.kind || null, glyph: item.glyph || null,
+      kind: item.kind || null, glyph: item.glyph || null, clock: item.clock || null,
     };
   }
 
@@ -67,7 +67,7 @@ export class BankEngine {
       const lvl = this.levels[idx];
       const item = lvl.items[Math.floor(this.rng() * lvl.items.length)];
       if (!item.choices || item.kind === 'trace') continue;
-      out.push({ skillId: lvl.id, text: item.prompt, answer: item.answer, choices: shuffle([...item.choices], this.rng) });
+      out.push({ skillId: lvl.id, text: item.prompt, answer: item.answer, choices: shuffle([...item.choices], this.rng), kind: item.kind || null, clock: item.clock || null });
     }
     return out;
   }
