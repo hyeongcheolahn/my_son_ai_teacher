@@ -99,8 +99,9 @@ export class Game {
   enterSubject(subject) {
     this.state.currentSubject = subject;
     if (!this.state.subjects[subject]) this.state.subjects[subject] = { current: 0, skills: {} };
-    if (subject === 'math') this.engine = new MathEngine(this.state.subjects[subject]);
-    else if (subject === 'random') this.engine = new RandomEngine(this.state.subjects[subject]);
+    const kidName = (storage.getActiveProfile() && storage.getActiveProfile().name) || '친구';
+    if (subject === 'math') this.engine = new MathEngine(this.state.subjects[subject], Math.random, kidName);
+    else if (subject === 'random') this.engine = new RandomEngine(this.state.subjects[subject], Math.random, kidName);
     else this.engine = new BankEngine(C.buildBank(subject), this.state.subjects[subject]);
 
     this.ensureStarter(subject);
@@ -317,7 +318,9 @@ export class Game {
     this.q = this.engine.nextQuestion();
     const qEl = $('question');
     qEl.textContent = this.q.text;
-    qEl.classList.toggle('small', String(this.q.text).length > 12);
+    const qlen = String(this.q.text).length;
+    qEl.classList.toggle('small', qlen > 12 && qlen <= 34);
+    qEl.classList.toggle('tiny', qlen > 34); // 응용(이야기) 문제처럼 긴 문장
     this.qStart = performance.now();
     this.locked = false;
     if (this.q.kind === 'trace') { this.renderTrace(this.q); this.refreshTransformBtn(); return; }

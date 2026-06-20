@@ -23,8 +23,9 @@ export const NEED_PER_LEVEL = 18;
 const WINDOW = 12; // 최근 결과 추적(부모 보기용 정답률)
 
 export class MathEngine {
-  constructor(state, rng = Math.random) {
+  constructor(state, rng = Math.random, name = '친구') {
     this.rng = rng;
+    this.name = name || '친구';
     // state: { current: idx, skills: { id: {attempts, correct, recent:[], totalTime, levelCorrect, mastered} } }
     this.state = state || { current: 0, skills: {} };
     for (const s of SKILLS) {
@@ -46,6 +47,8 @@ export class MathEngine {
     }
     let idx = this.state.current;
     if (this.state.current > 0 && this.rng() < 0.2) idx = Math.floor(this.rng() * this.state.current); // 복습
+    // 약 40% 확률로 응용(이야기) 문제
+    if (this.rng() < 0.4) return storyQuestion(idx, this.rng, this.name);
     return mathQuestion(idx, this.rng);
   }
 
@@ -118,6 +121,63 @@ export function mathQuestion(idx, rng = Math.random) {
   const { a, b } = skill.gen(rng);
   const answer = compute(a, b, skill.op);
   return { skillId: skill.id, skillIdx: idx, text: `${a} ${skill.op} ${b} = ?`, answer, choices: buildChoices(answer, rng) };
+}
+
+// ---- 응용(이야기) 문제 ----------------------------------------------------
+// 아이 이름을 넣어 실생활 상황으로 만든다. 예) "도겸이가 사탕 3개를 가지고 있는데 4개를 더 받고 1개를 먹으면?"
+const STORY_ITEMS = ['사탕', '사과', '딸기', '구슬', '쿠키', '스티커', '젤리', '초콜릿', '풍선', '블록', '곰젤리', '포켓몬 카드'];
+const GET_VERBS = ['더 받았어요', '더 샀어요', '더 주웠어요', '선물로 더 받았어요'];
+const LOSE_VERBS = ['먹었어요', '친구에게 줬어요', '동생에게 줬어요', '잃어버렸어요'];
+const CONTAINERS = ['봉지', '접시', '상자', '바구니', '주머니'];
+
+function hasJong(s) {
+  if (!s) return false;
+  const c = s.charCodeAt(s.length - 1);
+  if (c < 0xac00 || c > 0xd7a3) return false;
+  return (c - 0xac00) % 28 !== 0;
+}
+// 이름 + 주격(친근형): 도겸이가 / 지호가
+function nameSubject(name) { return name + (hasJong(name) ? '이가' : '가'); }
+function pickOf(rng, arr) { return arr[Math.floor(rng() * arr.length)]; }
+
+export function storyQuestion(idx, rng = Math.random, name = '친구') {
+  const skill = SKILLS[Math.min(idx, SKILLS.length - 1)];
+  const nm = nameSubject(name);
+  const item = pickOf(rng, STORY_ITEMS);
+  let text, answer;
+
+  if (skill.op === '+') {
+    const { a, b } = skill.gen(rng);
+    if (idx >= 1 && rng() < 0.5) {
+      const sum = a + b;
+      const c = 1 + Math.floor(rng() * Math.max(1, Math.floor(sum / 2)));
+      answer = Math.max(0, sum - c);
+      text = `${nm} ${item} ${a}개를 가지고 있는데, ${b}개를 ${pickOf(rng, GET_VERBS)}. 그리고 ${c}개를 ${pickOf(rng, LOSE_VERBS)}. 모두 몇 개일까요?`;
+    } else {
+      answer = a + b;
+      text = `${nm} ${item} ${a}개를 가지고 있어요. ${b}개를 ${pickOf(rng, GET_VERBS)}. 모두 몇 개일까요?`;
+    }
+  } else if (skill.op === '-') {
+    const { a, b } = skill.gen(rng);
+    if (idx >= 4 && rng() < 0.4 && a - b >= 2) {
+      const c = 1 + Math.floor(rng() * Math.max(1, a - b));
+      answer = Math.max(0, a - b - c);
+      text = `${nm} ${item} ${a}개가 있어요. ${b}개를 ${pickOf(rng, LOSE_VERBS)}. 또 ${c}개를 ${pickOf(rng, LOSE_VERBS)}. 몇 개 남았을까요?`;
+    } else {
+      answer = a - b;
+      text = `${nm} ${item} ${a}개가 있어요. ${b}개를 ${pickOf(rng, LOSE_VERBS)}. 몇 개 남았을까요?`;
+    }
+  } else if (skill.op === '×') {
+    const { a, b } = skill.gen(rng);
+    const cont = pickOf(rng, CONTAINERS);
+    answer = a * b;
+    text = `한 ${cont}에 ${item} ${a}개씩 들어 있어요. ${b}${cont}에는 모두 몇 개일까요?`;
+  } else { // ÷
+    const { a, b } = skill.gen(rng); // a = b * q
+    answer = a / b;
+    text = `${nm} ${item} ${a}개를 친구 ${b}명과 똑같이 나누면, 한 명이 몇 개씩 가질까요?`;
+  }
+  return { skillId: skill.id, skillIdx: idx, text, answer, choices: buildChoices(answer, rng) };
 }
 
 function buildChoices(answer, rng) {

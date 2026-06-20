@@ -1,14 +1,15 @@
 // 랜덤 모드 엔진: 수학·영어·한자·과학을 섞어서 낸다.
 // 정답을 NEED_PER_LEVEL 개 모으면 전체 난이도(Lv)가 한 칸 오른다. 틀리면 같은 문제 재출제(진도 정지).
-import { mathQuestion, MATH_LEVELS, NEED_PER_LEVEL } from './mathengine.js';
+import { mathQuestion, storyQuestion, MATH_LEVELS, NEED_PER_LEVEL } from './mathengine.js';
 import { buildBank } from './creatures.js';
 
 const BANK_SUBJECTS = ['english', 'hanja', 'science'];
 const ALL_SUBJECTS = ['math', ...BANK_SUBJECTS];
 
 export class RandomEngine {
-  constructor(state, rng = Math.random) {
+  constructor(state, rng = Math.random, name = '친구') {
     this.rng = rng;
+    this.name = name || '친구';
     this.state = state || { current: 0, levelCorrect: 0, attempts: 0, correct: 0 };
     if (this.state.current == null) this.state.current = 0;
     if (this.state.levelCorrect == null) this.state.levelCorrect = 0;
@@ -36,7 +37,7 @@ export class RandomEngine {
     const sub = ALL_SUBJECTS[Math.floor(this.rng() * ALL_SUBJECTS.length)];
     if (sub === 'math') {
       const idx = Math.min(this.state.current, MATH_LEVELS - 1);
-      const q = mathQuestion(idx, this.rng);
+      const q = this.rng() < 0.4 ? storyQuestion(idx, this.rng, this.name) : mathQuestion(idx, this.rng);
       q.skillId = 'rnd'; q.subjectTag = 'math';
       return q;
     }

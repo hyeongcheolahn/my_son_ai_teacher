@@ -173,6 +173,7 @@ body {
 
 /* 긴 문제/텍스트 선택지 */
 #question.small { font-size: 27px; line-height: 1.3; padding: 0 10px; }
+#question.tiny { font-size: 20px; line-height: 1.4; padding: 0 12px; max-width: 560px; margin-left: auto; margin-right: auto; word-break: keep-all; }
 .choice.text { font-size: 21px; line-height: 1.25; padding: 16px 10px; }
 
 /* 미니 몬스터 디스크(파티/진화/도감) */
