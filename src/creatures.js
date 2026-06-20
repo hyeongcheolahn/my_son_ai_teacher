@@ -2,6 +2,7 @@
 // 외형은 절차적 스타일라이즈드 3D로 근사(공식 모델 미포함).
 import { REGIONS } from './data/regions.js';
 import { EXTRA } from './data/extra.js';
+import { EXTRA2, EXTRA_LEVELS } from './data/extra2.js';
 
 export const SUBJECTS = [
   { key: 'math', label: '수학', region: '관동', emoji: '➕' },
@@ -14,16 +15,34 @@ export const SUBJECTS = [
 // 실제 지방(수학~과학) 키. 랜덤 모드 제외.
 export const REAL_SUBJECTS = ['math', 'english', 'hanja', 'science'];
 
-// 문제은행 + 추가 문제(extra.js)를 합친 레벨 묶음을 만든다.
+// 문제은행 + 추가 문제(extra.js, extra2.js)를 합친 레벨 묶음을 만든다.
+// 중복(같은 질문)은 제거한다.
+function dedupeItems(items) {
+  const seen = new Set();
+  const out = [];
+  for (const it of items) {
+    const key = it.prompt;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(it);
+  }
+  return out;
+}
+
 export function buildBank(subject) {
   const r = REGIONS[subject];
   if (!r || !r.questionBank) return null;
   const ex = EXTRA[subject] || {};
+  const ex2 = EXTRA2[subject] || {};
   const levels = r.questionBank.levels.map((l) => ({
     id: l.id,
     label: l.label,
-    items: [...l.items, ...(ex[l.id] || [])],
+    items: dedupeItems([...l.items, ...(ex[l.id] || []), ...(ex2[l.id] || [])]),
   }));
+  // 아예 새로운 단계(예: 과학 4·5단계) 추가
+  for (const nl of (EXTRA_LEVELS[subject] || [])) {
+    levels.push({ id: nl.id, label: nl.label, items: dedupeItems([...nl.items]) });
+  }
   return { levels };
 }
 
