@@ -746,9 +746,54 @@ export class BattleScene {
     return 230;
   }
 
+  // 한자(大/雷 등)가 불·전기 모양으로 천천히 앞으로 날아가는 시그니처 연출.
+  _fx_kanji(from, to, glyph, color, fin, type) {
+    const hex = '#' + ('000000' + (color >>> 0).toString(16)).slice(-6);
+    const cnv = document.createElement('canvas'); cnv.width = cnv.height = 256;
+    const c = cnv.getContext('2d');
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.font = 'bold 190px "Apple SD Gothic Neo", serif';
+    c.shadowColor = hex; c.shadowBlur = 46; c.fillStyle = hex; c.fillText(glyph, 128, 140);
+    c.shadowBlur = 22; c.fillText(glyph, 128, 140);
+    c.shadowBlur = 10; c.fillStyle = '#ffffff'; c.fillText(glyph, 128, 140);
+    const tex = new THREE.CanvasTexture(cnv);
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false });
+    const base = fin ? 2.6 : 2.0;
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(base, base), mat);
+    plane.position.copy(from); plane.renderOrder = 999; this.scene.add(plane);
+    // 불·전기 잔불 입자도 같이 직진
+    this._stream(from, to, { color, type: type || 'fire', count: fin ? 22 : 13, arc: 0.15, spin: 3, scale: fin ? 1.3 : 0.95, straight: true, dur: 0.85 });
+    const dur = fin ? 1.05 : 0.85;
+    this.effects.push({
+      time: 0, parent: this,
+      update(dt) {
+        this.time += dt; const p = Math.min(this.time / dur, 1);
+        plane.position.lerpVectors(from, to, p < 0.85 ? p / 0.85 : 1);
+        plane.quaternion.copy(this.parent.camera.quaternion);
+        plane.scale.setScalar((0.55 + p * 0.85) * (fin ? 1.25 : 1));
+        mat.opacity = (p < 0.82 ? 1 : Math.max(0, 1 - (p - 0.82) / 0.18)) * (0.82 + Math.random() * 0.18);
+        if (p >= 1) { this.parent.scene.remove(plane); plane.geometry.dispose(); mat.dispose(); tex.dispose(); return false; }
+        return true;
+      },
+    });
+    return dur * 1000 * 0.82;
+  }
+
+  // 두 줄기 물대포가 나란히 천천히 적에게 뻗는 연출.
+  _fx_twin(from, to, color, type, fin) {
+    const dur = 0.8;
+    for (const oy of [0.3, -0.3]) {
+      const f = from.clone(); f.y += oy; const t = to.clone(); t.y += oy * 0.4;
+      this._stream(f, t, { color, type: type || 'water', count: fin ? 28 : 18, arc: 0.04, spin: 2, scale: fin ? 1.5 : 1.1, straight: true, dur });
+    }
+    return dur * 1000 * 0.85;
+  }
+
   // 기술 스펙(타입별 2~3종)에 따라 연출 실행. 반환: 임팩트 지연(ms).
   _playMove(from, to, move, fin, target) {
     const color = TYPE_COLORS[move.geo] || 0xffffff;
+    if (move.fx === 'kanji') return this._fx_kanji(from, to, move.glyph || '大', color, fin, move.geo);
+    if (move.fx === 'twin') return this._fx_twin(from, to, color, move.geo, fin);
     switch (move.style) {
       case 'lightning': return this._move_electric(from, to, color, fin);
       case 'beam':
