@@ -34,6 +34,10 @@ export class RandomEngine {
       const q = this._repeat; this._repeat = null;
       return { ...q, choices: q.choices ? shuffle([...q.choices], this.rng) : undefined };
     }
+    return this._makeQ();
+  }
+
+  _makeQ() {
     const sub = ALL_SUBJECTS[Math.floor(this.rng() * ALL_SUBJECTS.length)];
     if (sub === 'math') {
       const idx = Math.min(this.state.current, MATH_LEVELS - 1);
@@ -64,22 +68,32 @@ export class RandomEngine {
   record(skillId, correct) {
     this.state.attempts++;
     if (correct) this.state.correct++;
-    let promoted = null;
-    if (correct) {
+    if (correct && !this.state.examPending) {
       this.state.levelCorrect++;
-      if (this.state.levelCorrect >= NEED_PER_LEVEL) {
-        if (this.state.current < this.maxLevel) {
-          const from = this.currentSkill().label;
-          this.state.current++;
-          this.state.levelCorrect = 0;
-          promoted = { fromLabel: from, toLabel: this.currentSkill().label };
-        } else {
-          this.state.levelCorrect = NEED_PER_LEVEL; // 최고 난이도에서 멈춤
-        }
-      }
+      if (this.state.levelCorrect >= NEED_PER_LEVEL) { this.state.examPending = true; return { exam: true }; }
     }
+    return null;
+  }
+
+  // 종합 시험(따라쓰기 제외)
+  examWaiting() { return !!this.state.examPending; }
+  examPool(n = 5) {
+    const out = []; let guard = 0;
+    while (out.length < n && guard++ < n * 12) { const q = this._makeQ(); if (q.kind === 'trace' || !q.choices) continue; out.push(q); }
+    while (out.length < n) out.push(this._mathFallback());
+    return out;
+  }
+  passExam() {
+    this.state.examPending = false;
+    let promoted = null;
+    if (this.state.current < this.maxLevel) {
+      const from = this.currentSkill().label;
+      this.state.current++; this.state.levelCorrect = 0;
+      promoted = { fromLabel: from, toLabel: this.currentSkill().label };
+    } else { this.state.levelCorrect = NEED_PER_LEVEL; }
     return promoted;
   }
+  failExam() { this.state.examPending = false; this.state.levelCorrect = Math.floor(NEED_PER_LEVEL * 0.6); }
 
   progress() { return Math.min(this.state.levelCorrect / NEED_PER_LEVEL, 1); }
   graduationReady() { return false; } // 랜덤 모드는 끝없이 연습
