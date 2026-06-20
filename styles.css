@@ -173,6 +173,7 @@ body {
 
 /* 긴 문제/텍스트 선택지 */
 #question.small { font-size: 27px; line-height: 1.3; padding: 0 10px; }
+#question.tiny { font-size: 20px; line-height: 1.4; padding: 0 12px; max-width: 560px; margin-left: auto; margin-right: auto; word-break: keep-all; }
 .choice.text { font-size: 21px; line-height: 1.25; padding: 16px 10px; }
 
 /* 미니 몬스터 디스크(파티/진화/도감) */
@@ -250,7 +251,9 @@ body {
 .trace-pad { position: relative; width: 260px; height: 260px; max-width: 72vw; max-height: 72vw;
   background: #fff; border-radius: 20px; box-shadow: 0 6px 0 #c4cbe0, inset 0 0 0 3px #e3e8f5; touch-action: none; }
 .trace-pad canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 20px; }
+.trace-guide, .trace-demo { pointer-events: none; }
 .trace-ink { touch-action: none; }
+.trace-demo-btn { background: linear-gradient(180deg, #ffd24a, #ef9f27); color: #5a3a00; box-shadow: 0 4px 0 #b8740f; }
 .trace-btns { display: flex; gap: 12px; }
 .trace-btns button { font-size: 19px; font-weight: 800; padding: 12px 20px; border: none; border-radius: 14px; cursor: pointer; color: #fff; }
 .trace-clear { background: linear-gradient(180deg, #6b7794, #4a5470); box-shadow: 0 4px 0 #333b52; }

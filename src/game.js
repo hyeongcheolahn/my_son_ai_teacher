@@ -9,6 +9,7 @@ import { pickMove } from './data/moves.js';
 import { artUrl } from './data/dex.js';
 import { sfx } from './audio.js';
 import { requestMotionPermission, hasMotion, armThrow, disarmThrow } from './motion.js';
+import { getStrokes } from './data/strokes.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -99,8 +100,9 @@ export class Game {
   enterSubject(subject) {
     this.state.currentSubject = subject;
     if (!this.state.subjects[subject]) this.state.subjects[subject] = { current: 0, skills: {} };
-    if (subject === 'math') this.engine = new MathEngine(this.state.subjects[subject]);
-    else if (subject === 'random') this.engine = new RandomEngine(this.state.subjects[subject]);
+    const kidName = (storage.getActiveProfile() && storage.getActiveProfile().name) || '친구';
+    if (subject === 'math') this.engine = new MathEngine(this.state.subjects[subject], Math.random, kidName);
+    else if (subject === 'random') this.engine = new RandomEngine(this.state.subjects[subject], Math.random, kidName);
     else this.engine = new BankEngine(C.buildBank(subject), this.state.subjects[subject]);
 
     this.ensureStarter(subject);
@@ -317,7 +319,9 @@ export class Game {
     this.q = this.engine.nextQuestion();
     const qEl = $('question');
     qEl.textContent = this.q.text;
-    qEl.classList.toggle('small', String(this.q.text).length > 12);
+    const qlen = String(this.q.text).length;
+    qEl.classList.toggle('small', qlen > 12 && qlen <= 34);
+    qEl.classList.toggle('tiny', qlen > 34); // 응용(이야기) 문제처럼 긴 문장
     this.qStart = performance.now();
     this.locked = false;
     if (this.q.kind === 'trace') { this.renderTrace(this.q); this.refreshTransformBtn(); return; }
@@ -375,23 +379,27 @@ export class Game {
   renderTrace(q) {
     const box = $('choices');
     box.className = 'choices trace';
+    const strokes = getStrokes(q.glyph);
     box.innerHTML = `
       <div class="trace-wrap">
         <div class="trace-pad">
           <canvas class="trace-guide"></canvas>
+          <canvas class="trace-demo"></canvas>
           <canvas class="trace-ink"></canvas>
         </div>
         <div class="trace-btns">
+          ${strokes ? '<button class="trace-demo-btn">👀 순서 보기</button>' : ''}
           <button class="trace-clear">↺ 지우기</button>
           <button class="trace-done">✏️ 다 썼어요!</button>
         </div>
-        <div class="trace-hint">글자를 손가락으로 따라 써 보자</div>
+        <div class="trace-hint">${strokes ? '먼저 쓰는 순서를 보고, 손가락으로 따라 써 보자' : '글자를 손가락으로 따라 써 보자'}</div>
       </div>`;
     const guide = box.querySelector('.trace-guide');
+    const demo = box.querySelector('.trace-demo');
     const ink = box.querySelector('.trace-ink');
     const hint = box.querySelector('.trace-hint');
     const SIZE = Math.min(260, Math.max(180, Math.floor((box.clientWidth || 300) * 0.7)));
-    for (const cv of [guide, ink]) { cv.width = SIZE; cv.height = SIZE; }
+    for (const cv of [guide, demo, ink]) { cv.width = SIZE; cv.height = SIZE; }
 
     // 가이드(연한 글자) 그리기 — 동시에 마스크로도 쓴다.
     const gctx = guide.getContext('2d');
@@ -401,6 +409,13 @@ export class Game {
     gctx.textBaseline = 'middle';
     gctx.font = `bold ${Math.floor(SIZE * 0.72)}px "Apple SD Gothic Neo", system-ui, sans-serif`;
     gctx.fillText(q.glyph, SIZE / 2, SIZE / 2 + SIZE * 0.02);
+
+    // 획순 시범(펜 애니메이션)
+    const dctx = demo.getContext('2d');
+    if (strokes) {
+      this.playStrokeDemo(demo, dctx, strokes, SIZE);
+      box.querySelector('.trace-demo-btn').onclick = () => { sfx.tap(); this.playStrokeDemo(demo, dctx, strokes, SIZE); };
+    }
 
     // 잉크(사용자가 따라 쓰는 층)
     const ictx = ink.getContext('2d');
@@ -456,6 +471,69 @@ export class Game {
       if (g[i] > 20) { need++; if (k[i] > 20) hit++; }
     }
     return need ? hit / need : 0;
+  }
+
+  // 획순 시범: 펜이 획을 순서대로 그리며 번호를 보여준다.
+  playStrokeDemo(canvas, ctx, strokes, SIZE) {
+    if (this._demoRAF) cancelAnimationFrame(this._demoRAF);
+    const pad = SIZE * 0.12, span = SIZE - pad * 2;
+    const map = (pt) => [pad + (pt[0] / 100) * span, pad + (pt[1] / 100) * span];
+    const segInfo = strokes.map((s) => {
+      const pts = s.map(map); const segs = []; let total = 0;
+      for (let i = 1; i < pts.length; i++) { const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); segs.push(l); total += l; }
+      return { pts, segs, total: total || 1 };
+    });
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(8, SIZE * 0.05);
+    const STROKE_T = 0.55, PAUSE = 0.22;
+    let si = 0, phase = 'draw', t0 = performance.now();
+
+    const drawUpTo = (cur, frac) => {
+      ctx.clearRect(0, 0, SIZE, SIZE);
+      for (let k = 0; k <= cur && k < segInfo.length; k++) {
+        const info = segInfo[k];
+        const f = k < cur ? 1 : frac;
+        ctx.strokeStyle = k === cur ? '#ffd23f' : 'rgba(255,210,63,.8)';
+        ctx.beginPath(); ctx.moveTo(info.pts[0][0], info.pts[0][1]);
+        const target = info.total * f; let acc = 0, px = info.pts[0][0], py = info.pts[0][1];
+        for (let i = 1; i < info.pts.length; i++) {
+          const l = info.segs[i - 1];
+          if (acc + l <= target) { ctx.lineTo(info.pts[i][0], info.pts[i][1]); acc += l; px = info.pts[i][0]; py = info.pts[i][1]; }
+          else { const r = (target - acc) / l; px = info.pts[i - 1][0] + (info.pts[i][0] - info.pts[i - 1][0]) * r; py = info.pts[i - 1][1] + (info.pts[i][1] - info.pts[i - 1][1]) * r; ctx.lineTo(px, py); break; }
+        }
+        ctx.stroke();
+        this._drawStrokeNum(ctx, info.pts[0][0], info.pts[0][1], k + 1, SIZE);
+        if (k === cur) { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(px, py, SIZE * 0.032, 0, 7); ctx.fill(); }
+      }
+    };
+
+    const step = () => {
+      if (!canvas.isConnected) { this._demoRAF = null; return; }
+      const now = performance.now(), dt = (now - t0) / 1000;
+      if (phase === 'draw') {
+        const frac = Math.min(dt / STROKE_T, 1);
+        drawUpTo(si, frac);
+        if (frac >= 1) { phase = 'pause'; t0 = now; }
+      } else {
+        drawUpTo(si, 1);
+        if (dt >= PAUSE) {
+          si++;
+          if (si >= segInfo.length) { this._demoRAF = null; setTimeout(() => { if (canvas.isConnected) ctx.clearRect(0, 0, SIZE, SIZE); }, 1000); return; }
+          phase = 'draw'; t0 = now;
+        }
+      }
+      this._demoRAF = requestAnimationFrame(step);
+    };
+    this._demoRAF = requestAnimationFrame(step);
+  }
+
+  _drawStrokeNum(ctx, x, y, n, SIZE) {
+    const r = SIZE * 0.052;
+    ctx.save();
+    ctx.fillStyle = '#ff5a5f'; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.floor(r * 1.3)}px system-ui, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(n), x, y + r * 0.06);
+    ctx.restore();
   }
 
   doAttack(done) {

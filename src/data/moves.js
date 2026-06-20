@@ -5,12 +5,12 @@ export const MOVES = {
   fire: [
     { name: '불꽃세례', style: 'stream', geo: 'fire', count: 22, arc: 0.5, spin: 3, scale: 1.1 },
     { name: '화염방사', style: 'stream', geo: 'fire', count: 34, arc: 0.22, spin: 2, scale: 1.3, straight: true },
-    { name: '불대문자', style: 'burst', geo: 'fire', count: 30 },
+    { name: '불대문자', fx: 'kanji', glyph: '大', geo: 'fire' },
   ],
   water: [
     { name: '물대포', style: 'stream', geo: 'water', count: 24, scale: 1.1, straight: true },
     { name: '거품광선', style: 'stream', geo: 'water', count: 22, arc: 0.4, spin: 4 },
-    { name: '하이드로펌프', style: 'burst', geo: 'water', count: 34 },
+    { name: '하이드로펌프', fx: 'twin', geo: 'water' },
   ],
   grass: [
     { name: '잎날가르기', style: 'stream', geo: 'grass', count: 24, arc: 0.8, spin: 14, swirl: true },
@@ -20,7 +20,7 @@ export const MOVES = {
   electric: [
     { name: '전기쇼크', style: 'stream', geo: 'electric', count: 16, arc: 0.5 },
     { name: '10만볼트', style: 'lightning', geo: 'electric' },
-    { name: '번개', style: 'lightning', geo: 'electric' },
+    { name: '번개', fx: 'kanji', glyph: '雷', geo: 'electric' },
   ],
   ice: [
     { name: '얼음뭉치', style: 'stream', geo: 'ice', count: 18, arc: 0.5 },
