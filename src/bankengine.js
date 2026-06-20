@@ -1,7 +1,8 @@
 // 문제은행 기반 적응형 엔진(영어/한자/과학). MathEngine과 동일한 인터페이스.
+// 진급: 한 단계에서 "정답"을 NEED_PER_LEVEL 개 모으면 다음 단계. 틀리면 진도 정지 + 같은 문제 재출제.
+import { NEED_PER_LEVEL } from './mathengine.js';
+
 const WINDOW = 12;
-const MIN_ATTEMPTS = 8;
-const PROMOTE_ACC = 0.85;
 
 export class BankEngine {
   constructor(bank, state, rng = Math.random) {
@@ -9,9 +10,11 @@ export class BankEngine {
     this.levels = (bank && bank.levels) || [];
     this.state = state || { current: 0, skills: {} };
     for (const l of this.levels) {
-      if (!this.state.skills[l.id]) this.state.skills[l.id] = { attempts: 0, correct: 0, recent: [], totalTime: 0, mastered: false };
+      if (!this.state.skills[l.id]) this.state.skills[l.id] = { attempts: 0, correct: 0, recent: [], totalTime: 0, levelCorrect: 0, mastered: false };
+      if (this.state.skills[l.id].levelCorrect == null) this.state.skills[l.id].levelCorrect = 0;
     }
     if (this.state.current == null) this.state.current = 0;
+    this._repeat = null;
   }
 
   currentSkill() {
@@ -22,13 +25,22 @@ export class BankEngine {
   skillsCount() { return this.levels.length; }
 
   nextQuestion() {
+    if (this._repeat) {
+      const q = this._repeat; this._repeat = null;
+      return { ...q, choices: q.choices ? shuffle([...q.choices], this.rng) : undefined };
+    }
     let idx = this.state.current;
     if (this.state.current > 0 && this.rng() < 0.2) idx = Math.floor(this.rng() * this.state.current); // 복습
     const lvl = this.levels[idx];
     const item = lvl.items[Math.floor(this.rng() * lvl.items.length)];
-    const choices = shuffle([...item.choices], this.rng);
-    return { skillId: lvl.id, skillIdx: idx, text: item.prompt, answer: item.answer, choices };
+    return {
+      skillId: lvl.id, skillIdx: idx, text: item.prompt, answer: item.answer,
+      choices: item.choices ? shuffle([...item.choices], this.rng) : undefined,
+      kind: item.kind || null, glyph: item.glyph || null,
+    };
   }
+
+  markWrong(q) { if (q) this._repeat = q; }
 
   record(skillId, correct, timeMs) {
     const st = this.state.skills[skillId];
@@ -40,9 +52,9 @@ export class BankEngine {
 
     let promoted = null;
     const curId = this.currentSkill().id;
-    if (skillId === curId) {
-      const acc = st.recent.reduce((a, c) => a + c, 0) / st.recent.length;
-      if (st.recent.length >= MIN_ATTEMPTS && acc >= PROMOTE_ACC && !st.mastered) {
+    if (skillId === curId && correct && !st.mastered) {
+      st.levelCorrect = (st.levelCorrect || 0) + 1;
+      if (st.levelCorrect >= NEED_PER_LEVEL) {
         st.mastered = true;
         if (this.state.current < this.levels.length - 1) {
           const from = this.currentSkill().label;
@@ -57,8 +69,7 @@ export class BankEngine {
   progress() {
     const st = this.state.skills[this.currentSkill().id];
     if (this.state.current >= this.levels.length - 1 && st.mastered) return 1;
-    const acc = st.recent.length ? st.recent.reduce((a, c) => a + c, 0) / st.recent.length : 0;
-    return Math.min(Math.min(st.recent.length / MIN_ATTEMPTS, 1), Math.min(acc / PROMOTE_ACC, 1));
+    return Math.min((st.levelCorrect || 0) / NEED_PER_LEVEL, 1);
   }
 
   graduationReady() {
@@ -78,6 +89,8 @@ export class BankEngine {
         mastered: st.mastered || i < this.state.current,
         current: i === this.state.current,
         locked: i > this.state.current,
+        levelCorrect: i === this.state.current ? (st.levelCorrect || 0) : (i < this.state.current ? NEED_PER_LEVEL : 0),
+        need: NEED_PER_LEVEL,
       };
     });
   }

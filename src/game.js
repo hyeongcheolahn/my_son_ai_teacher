@@ -1,12 +1,14 @@
 import { BattleScene } from './scene.js';
 import { MathEngine } from './mathengine.js';
 import { BankEngine } from './bankengine.js';
+import { RandomEngine } from './randomengine.js';
 import * as C from './creatures.js';
 import * as storage from './storage.js';
 import { pickBall } from './data/balls.js';
 import { pickMove } from './data/moves.js';
 import { artUrl } from './data/dex.js';
 import { sfx } from './audio.js';
+import { requestMotionPermission, hasMotion, armThrow, disarmThrow } from './motion.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -51,7 +53,7 @@ export class Game {
   }
 
   bindUI() {
-    $('start-btn').onclick = () => { sfx.unlock(); this.openSubjectSelect(); };
+    $('start-btn').onclick = () => { sfx.unlock(); requestMotionPermission(); this.openSubjectSelect(); };
     $('catch-btn').onclick = () => this.throwBall();
     $('transform-btn').onclick = () => this.doTransform();
     $('dex-btn').onclick = () => this.openDex();
@@ -97,13 +99,13 @@ export class Game {
   enterSubject(subject) {
     this.state.currentSubject = subject;
     if (!this.state.subjects[subject]) this.state.subjects[subject] = { current: 0, skills: {} };
-    this.engine = subject === 'math'
-      ? new MathEngine(this.state.subjects[subject])
-      : new BankEngine(C.getRegion(subject).questionBank, this.state.subjects[subject]);
+    if (subject === 'math') this.engine = new MathEngine(this.state.subjects[subject]);
+    else if (subject === 'random') this.engine = new RandomEngine(this.state.subjects[subject]);
+    else this.engine = new BankEngine(C.buildBank(subject), this.state.subjects[subject]);
 
     this.ensureStarter(subject);
-    // 이 지방 출전 포켓몬 지정
-    const mine = this.state.owned.filter((o) => o.subject === subject);
+    // 출전 포켓몬 지정 (랜덤 모드는 어떤 포켓몬이든 출전 가능)
+    const mine = subject === 'random' ? this.state.owned : this.state.owned.filter((o) => o.subject === subject);
     if (mine.length && !mine.some((o) => o.uid === this.state.activeUid)) this.state.activeUid = mine[0].uid;
 
     this.hideAllModals();
@@ -114,6 +116,11 @@ export class Game {
   }
 
   ensureStarter(subject) {
+    if (subject === 'random') {
+      // 랜덤 모드: 가진 포켓몬이 하나도 없을 때만 수학 지방 스타터를 준다.
+      if (!this.state.owned.length) { const st = C.starterDef('math'); this.addOwned('math', st.id, true); }
+      return;
+    }
     if (!this.state.owned.some((o) => o.subject === subject)) {
       const st = C.starterDef(subject);
       this.addOwned(subject, st.id, true);
@@ -279,6 +286,8 @@ export class Game {
     if (graduation) {
       def = C.legendaryDef(subject);
       isLegendary = true;
+    } else if (subject === 'random') {
+      def = C.pickAnyWildDef();
     } else {
       def = C.pickWildDef(subject);
     }
@@ -306,11 +315,15 @@ export class Game {
 
   nextQuestion() {
     this.q = this.engine.nextQuestion();
-    const isText = typeof this.q.answer !== 'number';
     const qEl = $('question');
     qEl.textContent = this.q.text;
     qEl.classList.toggle('small', String(this.q.text).length > 12);
+    this.qStart = performance.now();
+    this.locked = false;
+    if (this.q.kind === 'trace') { this.renderTrace(this.q); this.refreshTransformBtn(); return; }
+    const isText = typeof this.q.answer !== 'number';
     const box = $('choices');
+    box.className = 'choices';
     box.innerHTML = '';
     for (const c of this.q.choices) {
       const btn = document.createElement('button');
@@ -319,8 +332,6 @@ export class Game {
       btn.onclick = () => this.answer(c, btn);
       box.appendChild(btn);
     }
-    this.qStart = performance.now();
-    this.locked = false;
     this.refreshTransformBtn(); // 변신 가능하면 버튼 표시
   }
 
@@ -329,28 +340,122 @@ export class Game {
     this.locked = true;
     sfx.tap();
     const correct = String(value) === String(this.q.answer);
-    const time = performance.now() - this.qStart;
-    const buttons = [...document.querySelectorAll('.choice')];
+    const buttons = [...document.querySelectorAll('#choices .choice')];
     buttons.forEach((b) => (b.disabled = true));
-
-    const promoted = this.engine.record(this.q.skillId, correct, time);
-
     if (correct) {
       btn.classList.add('correct');
+    } else {
+      btn.classList.add('wrong');
+      buttons.find((b) => String(b.textContent) === String(this.q.answer))?.classList.add('correct');
+    }
+    this.resolveAnswer(correct);
+  }
+
+  // 정답/오답 공통 처리. 오답이면 진도가 오르지 않고 같은 문제를 다시 낸다.
+  resolveAnswer(correct) {
+    const time = performance.now() - this.qStart;
+    const promoted = this.engine.record(this.q.skillId, correct, time);
+    if (correct) {
       this.state.totalCorrect++;
       sfx.correct();
       this.doAttack(() => this.afterAnswer(promoted, true));
     } else {
-      btn.classList.add('wrong');
-      buttons.find((b) => String(b.textContent) === String(this.q.answer))?.classList.add('correct');
       this.state.totalWrong++;
       this.addReview(this.q);
+      this.engine.markWrong(this.q); // 같은 문제 재출제 → 맞힐 때까지 진도 정지
       sfx.wrong();
-      this.showMessage('아쉬워! 다시 도전!', '#ff7a9c', 900);
+      this.showMessage('아쉬워! 같은 문제 다시 도전!', '#ff7a9c', 1100);
       this.enemyCounter(() => this.afterAnswer(promoted, false));
     }
     this.refreshTop();
     storage.save(this.state);
+  }
+
+  // ---- 따라쓰기 문제 -----------------------------------------------------
+  renderTrace(q) {
+    const box = $('choices');
+    box.className = 'choices trace';
+    box.innerHTML = `
+      <div class="trace-wrap">
+        <div class="trace-pad">
+          <canvas class="trace-guide"></canvas>
+          <canvas class="trace-ink"></canvas>
+        </div>
+        <div class="trace-btns">
+          <button class="trace-clear">↺ 지우기</button>
+          <button class="trace-done">✏️ 다 썼어요!</button>
+        </div>
+        <div class="trace-hint">글자를 손가락으로 따라 써 보자</div>
+      </div>`;
+    const guide = box.querySelector('.trace-guide');
+    const ink = box.querySelector('.trace-ink');
+    const hint = box.querySelector('.trace-hint');
+    const SIZE = Math.min(260, Math.max(180, Math.floor((box.clientWidth || 300) * 0.7)));
+    for (const cv of [guide, ink]) { cv.width = SIZE; cv.height = SIZE; }
+
+    // 가이드(연한 글자) 그리기 — 동시에 마스크로도 쓴다.
+    const gctx = guide.getContext('2d');
+    gctx.clearRect(0, 0, SIZE, SIZE);
+    gctx.fillStyle = 'rgba(120,124,150,0.40)';
+    gctx.textAlign = 'center';
+    gctx.textBaseline = 'middle';
+    gctx.font = `bold ${Math.floor(SIZE * 0.72)}px "Apple SD Gothic Neo", system-ui, sans-serif`;
+    gctx.fillText(q.glyph, SIZE / 2, SIZE / 2 + SIZE * 0.02);
+
+    // 잉크(사용자가 따라 쓰는 층)
+    const ictx = ink.getContext('2d');
+    ictx.lineCap = 'round';
+    ictx.lineJoin = 'round';
+    ictx.lineWidth = Math.max(14, SIZE * 0.07);
+    ictx.strokeStyle = '#ff5a5f';
+
+    let drawing = false, last = null, drewSomething = false;
+    const pos = (e) => {
+      const r = ink.getBoundingClientRect();
+      const t = e.touches ? e.touches[0] : e;
+      return { x: (t.clientX - r.left) * (SIZE / r.width), y: (t.clientY - r.top) * (SIZE / r.height) };
+    };
+    const down = (e) => { e.preventDefault(); drawing = true; last = pos(e); };
+    const move = (e) => {
+      if (!drawing) return; e.preventDefault();
+      const p = pos(e);
+      ictx.beginPath(); ictx.moveTo(last.x, last.y); ictx.lineTo(p.x, p.y); ictx.stroke();
+      last = p; drewSomething = true;
+    };
+    const up = () => { drawing = false; };
+    ink.addEventListener('touchstart', down, { passive: false });
+    ink.addEventListener('touchmove', move, { passive: false });
+    ink.addEventListener('touchend', up);
+    ink.addEventListener('mousedown', down);
+    ink.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    this._traceCleanup = () => { window.removeEventListener('mouseup', up); };
+
+    box.querySelector('.trace-clear').onclick = () => { sfx.tap(); ictx.clearRect(0, 0, SIZE, SIZE); drewSomething = false; hint.textContent = '글자를 손가락으로 따라 써 보자'; };
+    box.querySelector('.trace-done').onclick = () => {
+      if (this.locked) return;
+      if (!drewSomething) { hint.textContent = '글자 위를 손가락으로 따라 써 보자!'; return; }
+      const cov = this._traceCoverage(gctx, ictx, SIZE);
+      if (cov >= 0.4) {
+        this.locked = true;
+        if (this._traceCleanup) this._traceCleanup();
+        box.querySelector('.trace-done').disabled = true;
+        this.resolveAnswer(true);
+      } else {
+        hint.textContent = '조금만 더 진하게 따라 써 볼까? ✏️';
+      }
+    };
+  }
+
+  // 가이드 글자 위에 잉크가 얼마나 겹쳤는지 비율(0~1)
+  _traceCoverage(gctx, ictx, SIZE) {
+    const g = gctx.getImageData(0, 0, SIZE, SIZE).data;
+    const k = ictx.getImageData(0, 0, SIZE, SIZE).data;
+    let need = 0, hit = 0;
+    for (let i = 3; i < g.length; i += 4) {
+      if (g[i] > 20) { need++; if (k[i] > 20) hit++; }
+    }
+    return need ? hit / need : 0;
   }
 
   doAttack(done) {
@@ -374,7 +479,7 @@ export class Game {
       if (lab && this.enemy.energy > 0) this.showMessage(lab.text, lab.color, 1000);
       if (this.enemy.energy <= 0) {
         this.showMessage(this.enemy.isLegendary ? '지금이야! 포켓볼을 던져!' : '기절 직전! 포켓볼을 던져!', '#36d36e', 1200);
-        setTimeout(() => $('catch-btn').classList.remove('hidden'), 500);
+        setTimeout(() => this.showCatch(), 500);
       }
     }, { finisher: willFaint, power, move });
     setTimeout(done, willFaint ? 1150 : 900);
@@ -425,8 +530,18 @@ export class Game {
     }, delay);
   }
 
+  // 포획 기회 등장: 버튼 표시 + (가능하면) 자이로 던지기 모션 대기
+  showCatch() {
+    const btn = $('catch-btn');
+    btn.classList.remove('hidden');
+    const motion = hasMotion();
+    btn.textContent = motion ? '📱 폰을 휙 던져! (또는 누르기)' : '⚪ 포켓볼 던지기!';
+    if (motion) armThrow(() => { this.showMessage('📱 휙! 던졌다!', '#ffd23f', 800); this.throwBall(); });
+  }
+
   // ---- 포획 -------------------------------------------------------------
   throwBall() {
+    disarmThrow();
     $('catch-btn').classList.add('hidden');
     this.locked = true;
     sfx.throw();
@@ -443,7 +558,7 @@ export class Game {
         } else {
           sfx.escape();
           this.showMessage('아쉽! 튀어나왔다! 다시 던져보자!', '#ff7a9c', 1400);
-          setTimeout(() => $('catch-btn').classList.remove('hidden'), 1300); // 재도전 허용
+          setTimeout(() => this.showCatch(), 1300); // 재도전 허용
         }
       },
       success,
@@ -463,7 +578,8 @@ export class Game {
   }
 
   _keepCaught(enemy) {
-    const subject = this.state.currentSubject;
+    // 잡은 포켓몬은 원래 지방 소속으로 저장(랜덤 모드에서도 도감/진화가 올바르게 동작)
+    const subject = enemy.def.subject || this.state.currentSubject;
     this.addOwned(subject, enemy.def.id);
     this.gainXp(3); // 배틀 승리 보너스(출전 포켓몬)
     if (enemy.isLegendary) {
@@ -599,18 +715,20 @@ export class Game {
     const rep = this.engine.report();
     const tc = this.state.totalCorrect, tw = this.state.totalWrong;
     const overall = tc + tw ? Math.round((tc / (tc + tw)) * 100) : 0;
+    const place = subject === 'random' ? '여러 과목 섞기' : `${sMeta.region}지방`;
     let html = `<div class="parent-summary">
-      과목: <b>${sMeta.label}</b> (${sMeta.region}지방)${this.state.graduated[subject] ? ' · 👑졸업' : ''}<br>
+      과목: <b>${sMeta.label}</b> (${place})${this.state.graduated[subject] ? ' · 👑졸업' : ''}<br>
       현재 단계: <b>${this.engine.currentSkill().label}</b><br>
       총 정답 ${tc} · 오답 ${tw} · 전체 정답률 <b>${overall}%</b><br>
       보유 포켓몬 ${this.state.owned.length}마리
     </div>`;
     for (const r of rep) {
       const status = r.locked ? '🔒 잠김' : r.mastered ? '✅ 완료' : r.current ? '▶ 학습 중' : '';
+      const prog = r.current && r.need ? ` · 진도 ${r.levelCorrect}/${r.need} 정답` : '';
       html += `<div class="skill-row">
         <div class="skill-head"><span>${r.label} ${status}</span><span>${Math.round(r.accuracy * 100)}%</span></div>
         <div class="mbar"><div class="mfill" style="width:${r.attempts ? Math.round(r.accuracy * 100) : 0}%"></div></div>
-        <div class="meta">시도 ${r.attempts}회 · 평균 ${r.avgTime ? r.avgTime.toFixed(1) + '초' : '-'}</div>
+        <div class="meta">시도 ${r.attempts}회 · 평균 ${r.avgTime ? r.avgTime.toFixed(1) + '초' : '-'}${prog}</div>
       </div>`;
     }
     wrap.innerHTML = html;
@@ -619,7 +737,7 @@ export class Game {
 
   // ---- 오답 복습 ---------------------------------------------------------
   addReview(q) {
-    if (!q) return;
+    if (!q || !q.choices) return; // 따라쓰기 등 보기 없는 문제는 복습에 안 넣음
     if (!this.state.review) this.state.review = [];
     const key = String(q.text);
     if (this.state.review.some((r) => r.key === key)) return; // 중복 방지
