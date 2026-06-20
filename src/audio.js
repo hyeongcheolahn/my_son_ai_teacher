@@ -1,5 +1,7 @@
 // WebAudio 기반 초경량 효과음. 외부 파일 없이 합성한다.
 let ctx = null;
+let muted = false;
+try { muted = localStorage.getItem('sfx_muted') === '1'; } catch {}
 function ac() {
   if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch {} }
   if (ctx && ctx.state === 'suspended') ctx.resume();
@@ -35,6 +37,7 @@ if (typeof window !== 'undefined') {
 }
 
 function tone(freq, dur, type = 'sine', vol = 0.2, slideTo = null) {
+  if (muted) return;
   const a = ac(); if (!a) return;
   const osc = a.createOscillator();
   const gain = a.createGain();
@@ -49,6 +52,8 @@ function tone(freq, dur, type = 'sine', vol = 0.2, slideTo = null) {
 
 export const sfx = {
   unlock() { unlockAudio(); },
+  isMuted() { return muted; },
+  setMuted(b) { muted = !!b; try { localStorage.setItem('sfx_muted', b ? '1' : '0'); } catch {} },
   tap() { tone(440, 0.06, 'square', 0.12); },
   correct() { tone(660, 0.1, 'triangle', 0.2); setTimeout(() => tone(880, 0.14, 'triangle', 0.2), 90); },
   wrong() { tone(200, 0.25, 'sawtooth', 0.15, 110); },
