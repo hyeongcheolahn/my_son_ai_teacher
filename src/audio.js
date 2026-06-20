@@ -16,6 +16,18 @@ const SILENT_WAV = 'data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAE
 let silentEl = null;
 let unlocked = false;
 
+// 읽어주기(mp3) 재생용 엘리먼트 — 첫 제스처에 미리 깨워 두면 iOS에서도 이후 자동재생 가능
+let ttsEl = null;
+function ensureTtsEl() {
+  if (!ttsEl) { ttsEl = new Audio(); ttsEl.setAttribute('playsinline', ''); }
+  return ttsEl;
+}
+export function playUrl(url) {
+  const el = ensureTtsEl();
+  try { el.pause(); el.src = url; el.currentTime = 0; const p = el.play(); if (p && p.catch) p.catch(() => {}); } catch {}
+}
+export function stopUrl() { try { if (ttsEl) ttsEl.pause(); } catch {} }
+
 function unlockAudio() {
   const a = ac();
   if (a && a.state === 'suspended') a.resume();
@@ -26,6 +38,8 @@ function unlockAudio() {
     silentEl.setAttribute('playsinline', '');
   }
   silentEl.play().catch(() => {});
+  // mp3 재생 엘리먼트도 한 번 깨워 둔다(iOS 자동재생 제한 우회)
+  try { const t = ensureTtsEl(); const pr = t.play(); if (pr && pr.then) pr.then(() => t.pause()).catch(() => {}); } catch {}
   unlocked = true;
 }
 

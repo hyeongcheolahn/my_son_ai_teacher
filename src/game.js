@@ -7,7 +7,7 @@ import * as storage from './storage.js';
 import { pickBall } from './data/balls.js';
 import { pickMove } from './data/moves.js';
 import { artUrl } from './data/dex.js';
-import { sfx } from './audio.js';
+import { sfx, playUrl, stopUrl } from './audio.js';
 import { requestMotionPermission, hasMotion, armThrow, disarmThrow } from './motion.js';
 import { getStrokes } from './data/strokes.js';
 import { speak, speakSupported, speakFriendly } from './tts.js';
@@ -485,6 +485,20 @@ export class Game {
     this._openTeach('앗, 같이 다시 볼까? 🤔', body, '알겠어! 다시 풀기 ▶', onDone, q, this.lastWrong, ex.speak);
   }
 
+  // 읽어주기: NAS에 자연스러운 음성(ElevenLabs)이 있으면 그걸로, 없으면 브라우저 음성으로.
+  speakTeach(text) {
+    if (!text) return;
+    try { window.speechSynthesis.cancel(); } catch {}
+    stopUrl();
+    if (storage.syncOn() && storage.caps().tts !== false) {
+      storage.ttsAudioUrl(text)
+        .then((url) => { if (url) playUrl(url); else speakFriendly(text); })
+        .catch(() => speakFriendly(text));
+    } else {
+      speakFriendly(text);
+    }
+  }
+
   // 🤖 AI 선생님: NAS의 Claude가 이 문제를 아이 눈높이로 더 자세히 설명
   askAiTutor(q, studentAnswer) {
     const out = $('teach-ai');
@@ -502,7 +516,7 @@ export class Game {
       .then((r) => {
         const msg = (r && r.explain) ? r.explain : (r && r.error) ? '오류: ' + r.error : '응답을 받지 못했어요.';
         out.textContent = msg;
-        if (r && r.explain) { this._teachSpeak = r.explain; if (!sfx.isMuted()) speakFriendly(r.explain); } // AI 답도 친숙한 목소리로
+        if (r && r.explain) { this._teachSpeak = r.explain; if (!sfx.isMuted()) this.speakTeach(r.explain); } // AI 답도 목소리로
       })
       .catch((code) => {
         out.textContent = (code === 404 || code === 400)
@@ -522,8 +536,8 @@ export class Game {
     this._teachSpeak = speakText || '';
     const spk = $('teach-speak');
     if (spk) {
-      spk.classList.toggle('hidden', !this._teachSpeak || !speakSupported());
-      spk.onclick = () => { sfx.tap(); if (this._teachSpeak) speakFriendly(this._teachSpeak); };
+      spk.classList.toggle('hidden', !this._teachSpeak);
+      spk.onclick = () => { sfx.tap(); if (this._teachSpeak) this.speakTeach(this._teachSpeak); };
     }
     const aiBtn = $('teach-ai-btn');
     if (aiBtn) {
@@ -535,9 +549,9 @@ export class Game {
       }
     }
     btn.textContent = btnLabel;
-    btn.onclick = () => { sfx.tap(); try { window.speechSynthesis.cancel(); } catch {} modal.classList.add('hidden'); if (onDone) onDone(); };
+    btn.onclick = () => { sfx.tap(); try { window.speechSynthesis.cancel(); } catch {} stopUrl(); modal.classList.add('hidden'); if (onDone) onDone(); };
     modal.classList.remove('hidden');
-    if (this._teachSpeak && speakSupported() && !sfx.isMuted()) setTimeout(() => speakFriendly(this._teachSpeak), 240);
+    if (this._teachSpeak && !sfx.isMuted()) setTimeout(() => this.speakTeach(this._teachSpeak), 240);
   }
 
   // ---- 따라쓰기 문제 -----------------------------------------------------

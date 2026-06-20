@@ -40,6 +40,9 @@ services:
       ANTHROPIC_API_KEY: "sk-ant-..."
       APP_TOKEN: "우리집비밀123"
       MODEL: "claude-opus-4-8"   # 저렴하게: claude-haiku-4-5
+      # (선택) 자연스러운 읽어주기 음성 — ElevenLabs
+      ELEVENLABS_API_KEY: "여기에_ElevenLabs_키"
+      ELEVENLABS_VOICE_ID: "21m00Tcm4TlvDq8ikWAM"  # 원하는 한국어 음성 ID로 교체 권장
     command: node server.js
     ports:
       - "8787:8787"

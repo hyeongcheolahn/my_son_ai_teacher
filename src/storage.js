@@ -182,6 +182,26 @@ export async function pullAll() {
   }
 }
 
-export function testSync() { return api('GET', '/api/health'); }
+let _caps = {};
+export function caps() { return _caps; }
+export function testSync() { return api('GET', '/api/health').then((h) => { if (h) _caps = h; return h; }); }
 export function aiReport(name, analysis) { return api('POST', '/api/report', { name, analysis }); }
 export function aiExplain(payload) { return api('POST', '/api/explain', payload); }
+
+// 자연스러운 음성(mp3) 받아오기 → 재생용 Object URL 반환(없으면 null → 브라우저 음성으로 대체)
+export async function ttsAudioUrl(text) {
+  const base = syncUrl(); if (!base || !text) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 12000);
+  try {
+    const r = await fetch(base + '/api/tts', {
+      method: 'POST', signal: ctrl.signal,
+      headers: { 'content-type': 'application/json', 'x-app-token': syncToken() },
+      body: JSON.stringify({ text }),
+    });
+    clearTimeout(timer);
+    if (!r.ok) return null;
+    const blob = await r.blob();
+    return URL.createObjectURL(blob);
+  } catch { clearTimeout(timer); return null; }
+}
