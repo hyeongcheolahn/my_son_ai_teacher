@@ -13,6 +13,9 @@ import { getStrokes } from './data/strokes.js';
 
 const $ = (id) => document.getElementById(id);
 
+const EXAM_N = 5;     // 종합 시험 문항 수
+const EXAM_PASS = 4;  // 합격 기준(정답 개수)
+
 function shuffleArr(a) {
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
@@ -316,6 +319,8 @@ export class Game {
   }
 
   nextQuestion() {
+    // 단계 정답을 다 모았으면 → 다음 일반 문제 대신 "종합 시험" 시작
+    if (this.pendingExam && !this.inExam) { this.pendingExam = false; this.startExam(); return; }
     this.q = this.engine.nextQuestion();
     const qEl = $('question');
     qEl.textContent = this.q.text;
@@ -358,7 +363,9 @@ export class Game {
   // 정답/오답 공통 처리. 오답이면 진도가 오르지 않고 같은 문제를 다시 낸다.
   resolveAnswer(correct) {
     const time = performance.now() - this.qStart;
-    const promoted = this.engine.record(this.q.skillId, correct, time);
+    const res = this.engine.record(this.q.skillId, correct, time);
+    const promoted = null;
+    if (res && res.exam) { this.pendingExam = true; this.showMessage('이번 단계 끝! 종합 시험 도전! 📝', '#ffd23f', 1500); }
     if (correct) {
       this.state.totalCorrect++;
       sfx.correct();
@@ -889,6 +896,72 @@ export class Game {
     setTimeout(() => { this.reviewPos++; this.renderReviewCard(); }, correct ? 700 : 1300);
   }
 
+  // ---- 단계 종합 시험 ----------------------------------------------------
+  startExam() {
+    this.inExam = true;
+    this.examQs = this.engine.examPool(EXAM_N);
+    this.examPos = 0; this.examScore = 0;
+    $('catch-btn').classList.add('hidden');
+    $('transform-btn').classList.add('hidden');
+    $('exam-modal').classList.remove('hidden');
+    sfx.levelup();
+    this.renderExamCard();
+  }
+
+  renderExamCard() {
+    const body = $('exam-body');
+    if (this.examPos >= this.examQs.length) {
+      const passed = this.examScore >= EXAM_PASS;
+      body.innerHTML = `<div class="exam-result ${passed ? 'pass' : 'fail'}">
+        <div class="exam-big">${passed ? '🎉 합격! 🎉' : '💪 다시 도전!'}</div>
+        <div>맞은 개수 <b>${this.examScore} / ${this.examQs.length}</b></div>
+        <p>${passed ? '다음 단계로 올라가요!' : `조금 더 연습한 뒤 다시 시험 볼 수 있어요. (${EXAM_PASS}개 이상 맞히면 합격)`}</p>
+        <button class="close-btn exam-ok">${passed ? '좋아!' : '연습하러 가기'}</button>
+      </div>`;
+      body.querySelector('.exam-ok').onclick = () => this.finishExam(passed);
+      return;
+    }
+    const item = this.examQs[this.examPos];
+    const choices = shuffleArr([...item.choices]);
+    const isText = typeof item.answer !== 'number';
+    const qlen = String(item.text).length;
+    body.innerHTML = `
+      <div class="exam-progress">시험 ${this.examPos + 1} / ${this.examQs.length} · 맞은 개수 ${this.examScore}</div>
+      <div class="review-q${qlen > 34 ? ' tiny' : qlen > 12 ? ' small' : ''}">${escapeText(item.text)}</div>
+      <div class="review-choices">
+        ${choices.map((c) => `<button class="choice${isText ? ' text' : ''}" data-c="${escapeAttr(c)}">${escapeText(c)}</button>`).join('')}
+      </div>`;
+    body.querySelectorAll('.choice').forEach((btn) => {
+      btn.onclick = () => this.answerExam(item, btn.dataset.c, btn, body);
+    });
+  }
+
+  answerExam(item, value, btn, body) {
+    const buttons = [...body.querySelectorAll('.choice')];
+    buttons.forEach((b) => (b.disabled = true));
+    const correct = String(value) === String(item.answer);
+    if (correct) { btn.classList.add('correct'); sfx.correct(); this.examScore++; }
+    else { btn.classList.add('wrong'); buttons.find((b) => String(b.dataset.c) === String(item.answer))?.classList.add('correct'); sfx.wrong(); }
+    setTimeout(() => { this.examPos++; this.renderExamCard(); }, correct ? 650 : 1100);
+  }
+
+  finishExam(passed) {
+    this.inExam = false;
+    $('exam-modal').classList.add('hidden');
+    if (passed) {
+      const promoted = this.engine.passExam();
+      sfx.levelup();
+      this.showMessage(promoted ? `🎉 ${promoted.toLabel} 단계로!` : '🎉 마지막 단계 통과! 졸업 시험 준비!', '#ffd23f', 2400);
+      this.scene.screenShake(0.3, 0.45);
+    } else {
+      this.engine.failExam();
+      this.showMessage('조금 더 연습하고 다시 도전하자! 💪', '#ff9a8a', 2200);
+    }
+    this.refreshTop();
+    storage.save(this.state);
+    setTimeout(() => this.nextQuestion(), 1700);
+  }
+
   // ---- UI 갱신 -----------------------------------------------------------
   setEnemyEnergy() {
     const pct = this.enemy ? (this.enemy.energy / this.enemy.maxEnergy) * 100 : 0;
@@ -910,7 +983,8 @@ export class Game {
     $('trainer-level').textContent = 'Lv.' + this.state.trainerLevel;
     $('caught-count').textContent = Object.values(this.state.dexCaught).reduce((a, c) => a + c, 0);
     if (this.engine) {
-      $('stage-name').textContent = this.engine.currentSkill().label;
+      const exam = this.engine.examWaiting && this.engine.examWaiting();
+      $('stage-name').textContent = exam ? '📝 종합 시험!' : this.engine.currentSkill().label;
       $('stage-fill').style.width = this.engine.progress() * 100 + '%';
     }
     const sub = this.state.currentSubject;

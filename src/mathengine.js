@@ -57,7 +57,7 @@ export class MathEngine {
 
   _choices(answer) { return buildChoices(answer, this.rng); }
 
-  // 결과 기록 + 진급 판정. 반환: { promoted, fromLabel, toLabel }
+  // 결과 기록. 한 단계 정답을 NEED_PER_LEVEL 개 모으면 종합 시험을 알린다({exam:true}).
   record(skillId, correct, timeMs) {
     const st = this.state.skills[skillId];
     st.attempts++;
@@ -66,21 +66,38 @@ export class MathEngine {
     st.recent.push(correct ? 1 : 0);
     if (st.recent.length > WINDOW) st.recent.shift();
 
-    let promoted = null;
     const curId = this.currentSkill().id;
-    // 현재 단계에서 "정답"일 때만 진도가 오른다. 틀리면 그대로(진도 정지).
-    if (skillId === curId && correct && !st.mastered) {
+    if (skillId === curId && correct && !st.mastered && !st.examPending) {
       st.levelCorrect = (st.levelCorrect || 0) + 1;
-      if (st.levelCorrect >= NEED_PER_LEVEL) {
-        st.mastered = true;
-        if (this.state.current < SKILLS.length - 1) {
-          const from = this.currentSkill().label;
-          this.state.current++;
-          promoted = { fromLabel: from, toLabel: this.currentSkill().label };
-        }
-      }
+      if (st.levelCorrect >= NEED_PER_LEVEL) { st.examPending = true; return { exam: true }; }
+    }
+    return null;
+  }
+
+  // 종합 시험: 현재 단계 + 이전 단계를 섞어 n문제
+  examWaiting() { const st = this.state.skills[this.currentSkill().id]; return !!st.examPending; }
+  examPool(n = 5) {
+    const out = []; const top = this.state.current;
+    for (let i = 0; i < n; i++) {
+      const idx = top > 0 && this.rng() < 0.35 ? Math.floor(this.rng() * (top + 1)) : top;
+      out.push(this.rng() < 0.4 ? storyQuestion(idx, this.rng, this.name) : mathQuestion(idx, this.rng));
+    }
+    return out;
+  }
+  passExam() {
+    const st = this.state.skills[this.currentSkill().id];
+    st.examPending = false; st.mastered = true;
+    let promoted = null;
+    if (this.state.current < SKILLS.length - 1) {
+      const from = this.currentSkill().label;
+      this.state.current++;
+      promoted = { fromLabel: from, toLabel: this.currentSkill().label };
     }
     return promoted;
+  }
+  failExam() {
+    const st = this.state.skills[this.currentSkill().id];
+    st.examPending = false; st.levelCorrect = Math.floor(NEED_PER_LEVEL * 0.6);
   }
 
   graduationReady() {

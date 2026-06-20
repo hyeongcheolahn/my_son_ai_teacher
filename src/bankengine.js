@@ -50,20 +50,41 @@ export class BankEngine {
     st.recent.push(correct ? 1 : 0);
     if (st.recent.length > WINDOW) st.recent.shift();
 
-    let promoted = null;
     const curId = this.currentSkill().id;
-    if (skillId === curId && correct && !st.mastered) {
+    if (skillId === curId && correct && !st.mastered && !st.examPending) {
       st.levelCorrect = (st.levelCorrect || 0) + 1;
-      if (st.levelCorrect >= NEED_PER_LEVEL) {
-        st.mastered = true;
-        if (this.state.current < this.levels.length - 1) {
-          const from = this.currentSkill().label;
-          this.state.current++;
-          promoted = { fromLabel: from, toLabel: this.currentSkill().label };
-        }
-      }
+      if (st.levelCorrect >= NEED_PER_LEVEL) { st.examPending = true; return { exam: true }; }
+    }
+    return null;
+  }
+
+  // 종합 시험(따라쓰기 제외, 보기 있는 문제만)
+  examWaiting() { const st = this.state.skills[this.currentSkill().id]; return !!st.examPending; }
+  examPool(n = 5) {
+    const out = []; const top = this.state.current; let guard = 0;
+    while (out.length < n && guard++ < n * 12) {
+      const idx = top > 0 && this.rng() < 0.35 ? Math.floor(this.rng() * (top + 1)) : top;
+      const lvl = this.levels[idx];
+      const item = lvl.items[Math.floor(this.rng() * lvl.items.length)];
+      if (!item.choices || item.kind === 'trace') continue;
+      out.push({ skillId: lvl.id, text: item.prompt, answer: item.answer, choices: shuffle([...item.choices], this.rng) });
+    }
+    return out;
+  }
+  passExam() {
+    const st = this.state.skills[this.currentSkill().id];
+    st.examPending = false; st.mastered = true;
+    let promoted = null;
+    if (this.state.current < this.levels.length - 1) {
+      const from = this.currentSkill().label;
+      this.state.current++;
+      promoted = { fromLabel: from, toLabel: this.currentSkill().label };
     }
     return promoted;
+  }
+  failExam() {
+    const st = this.state.skills[this.currentSkill().id];
+    st.examPending = false; st.levelCorrect = Math.floor(NEED_PER_LEVEL * 0.6);
   }
 
   progress() {
