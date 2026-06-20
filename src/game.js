@@ -386,6 +386,7 @@ export class Game {
     this.locked = true;
     sfx.tap();
     const correct = String(value) === String(this.q.answer);
+    this.lastWrong = correct ? null : value; // AI 선생님 설명에 쓸 '아이가 고른 답'
     const buttons = [...document.querySelectorAll('#choices .choice')];
     buttons.forEach((b) => (b.disabled = true));
     if (correct) {
@@ -457,19 +458,49 @@ export class Game {
     if (sample && sample.text) body += `<div class="teach-example">📖 이런 문제예요<br><b>${escapeText(sample.text)}</b></div>`;
     if (ex) body += `<div class="teach-explain"><div class="teach-explain-title">${ex.title}</div>${ex.html}</div>`;
     else body += '<div class="teach-explain td-text">차근차근 하나씩 풀어보면 돼요. 화이팅! 💪</div>';
-    this._openTeach(title, body, '이제 풀어볼래! ▶', onDone);
+    this._openTeach(title, body, '이제 풀어볼래! ▶', onDone, sample);
   }
 
   showTeach(q, onDone) {
     const ex = explainQuestion(q);
     if (!ex) { if (onDone) onDone(); return; } // 설명 없는 유형(따라쓰기 등)은 그냥 진행
     const body = `<div class="teach-explain"><div class="teach-explain-title">${ex.title}</div>${ex.html}</div>`;
-    this._openTeach('앗, 같이 다시 볼까? 🤔', body, '알겠어! 다시 풀기 ▶', onDone);
+    this._openTeach('앗, 같이 다시 볼까? 🤔', body, '알겠어! 다시 풀기 ▶', onDone, q, this.lastWrong);
   }
 
-  _openTeach(title, bodyHtml, btnLabel, onDone) {
+  // 🤖 AI 선생님: NAS의 Claude가 이 문제를 아이 눈높이로 더 자세히 설명
+  askAiTutor(q, studentAnswer) {
+    const out = $('teach-ai');
+    $('teach-ai-btn').classList.add('hidden');
+    out.classList.remove('hidden');
+    out.textContent = '🤖 AI 선생님이 설명을 준비하고 있어요… 잠깐만!';
+    storage.aiExplain({
+      name: this._profileName(),
+      subject: q.subjectTag || this.state.currentSubject,
+      question: q.text,
+      choices: q.choices,
+      correctAnswer: q.answer,
+      studentAnswer: studentAnswer != null ? studentAnswer : undefined,
+    })
+      .then((r) => { out.textContent = (r && r.explain) ? r.explain : (r && r.error) ? '오류: ' + r.error : '응답을 받지 못했어요.'; })
+      .catch((code) => {
+        out.textContent = (code === 404 || code === 400)
+          ? '🤖 AI 선생님을 쓰려면 NAS 서버를 최신으로 업데이트해 주세요.\n(server.js 교체 후 컨테이너 재시작)'
+          : 'AI 선생님과 연결하지 못했어요. NAS 서버가 켜져 있는지 확인해 주세요.';
+      });
+  }
+
+  _openTeach(title, bodyHtml, btnLabel, onDone, q, studentAnswer) {
     $('teach-title').innerHTML = title;
     $('teach-body').innerHTML = bodyHtml;
+    const ai = $('teach-ai'); ai.classList.add('hidden'); ai.textContent = '';
+    const aiBtn = $('teach-ai-btn');
+    if (q && storage.syncOn()) {
+      aiBtn.classList.remove('hidden');
+      aiBtn.onclick = () => { sfx.tap(); this.askAiTutor(q, studentAnswer); };
+    } else {
+      aiBtn.classList.add('hidden');
+    }
     const btn = $('teach-go');
     btn.textContent = btnLabel;
     btn.onclick = () => { sfx.tap(); $('teach-modal').classList.add('hidden'); if (onDone) onDone(); };

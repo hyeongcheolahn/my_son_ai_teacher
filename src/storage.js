@@ -177,3 +177,4 @@ export async function pullAll() {
 
 export function testSync() { return api('GET', '/api/health'); }
 export function aiReport(name, analysis) { return api('POST', '/api/report', { name, analysis }); }
+export function aiExplain(payload) { return api('POST', '/api/explain', payload); }

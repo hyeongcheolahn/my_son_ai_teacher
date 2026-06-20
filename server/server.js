@@ -43,23 +43,52 @@ function body(req) {
 }
 const authed = (req) => !APP_TOKEN || req.headers['x-app-token'] === APP_TOKEN;
 
-// ---- Claude 분석 리포트 ----------------------------------------------------
+// ---- Claude 호출 공통 -------------------------------------------------------
+async function callClaude(sys, user, maxTokens) {
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens || 1024, system: sys, messages: [{ role: 'user', content: user }] }),
+  });
+  const j = await r.json();
+  if (!r.ok) return { error: `Claude 오류: ${j.error ? j.error.message : r.status}` };
+  const text = (j.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+  return { text: text || '(빈 응답)' };
+}
+
+// ---- 학부모용 분석 리포트 ---------------------------------------------------
 async function makeReport(name, analysis) {
   if (!API_KEY) return { error: 'NAS 서버에 ANTHROPIC_API_KEY가 설정되지 않았어요.' };
   const sys = `당신은 다정하고 통찰력 있는 초등 저학년 담임 선생님입니다. 학부모에게 아이의 학습 데이터를 바탕으로 짧고 따뜻한 한국어 리포트를 씁니다.
 규칙: 칭찬과 강점 먼저, 그다음 취약점 2~3가지를 구체적으로(어떤 단원/유형), 마지막에 집에서 해볼 실천 팁 2~3가지. 과장·전문용어 금지, 부드러운 존댓말, 이모지 약간. 6~10문장.`;
   const user = `아이 이름: ${name || '아이'}\n학습 데이터(JSON):\n${JSON.stringify(analysis)}\n\n이 데이터를 분석해 학부모용 리포트를 작성해줘.`;
   try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': API_KEY, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: MODEL, max_tokens: 2000, system: sys, messages: [{ role: 'user', content: user }] }),
-    });
-    const j = await r.json();
-    if (!r.ok) return { error: `Claude 오류: ${j.error ? j.error.message : r.status}` };
-    const text = (j.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
-    return { report: text || '(빈 응답)' };
+    const out = await callClaude(sys, user, 2000);
+    return out.error ? out : { report: out.text };
   } catch (e) { return { error: '리포트 생성 실패: ' + e.message }; }
+}
+
+// ---- AI 선생님: 아이에게 문제를 눈높이로 설명 -------------------------------
+async function makeExplain(b) {
+  if (!API_KEY) return { error: 'NAS 서버에 ANTHROPIC_API_KEY가 설정되지 않았어요.' };
+  const sys = `너는 아주 다정하고 친근한 초등학교 저학년 선생님이야. 아이가 방금 풀고 있는(또는 틀린) 문제를 쉽고 재미있게 설명해 줘.
+규칙:
+- 따뜻한 반말로, 아이에게 직접 말하듯이.
+- 정답이 왜 그렇게 되는지 '과정'을 아주 작은 단계로 차근차근. (예: 손가락/구슬로 세기, 같은 수 여러 번 더하기 등 구체적 비유)
+- 전문용어 금지, 짧고 쉬운 문장. 3~5문장.
+- 마지막에 한 문장으로 응원. 이모지 1~2개.`;
+  const parts = [];
+  if (b.name) parts.push(`아이 이름: ${b.name}`);
+  if (b.subject) parts.push(`과목: ${b.subject}`);
+  parts.push(`문제: ${b.question}`);
+  if (Array.isArray(b.choices) && b.choices.length) parts.push(`보기: ${b.choices.join(', ')}`);
+  parts.push(`정답: ${b.correctAnswer}`);
+  if (b.studentAnswer != null && String(b.studentAnswer) !== String(b.correctAnswer)) parts.push(`아이가 고른 답(틀림): ${b.studentAnswer}`);
+  parts.push('\n이 문제를 아이가 이해할 수 있게 설명해 줘.');
+  try {
+    const out = await callClaude(sys, parts.join('\n'), 700);
+    return out.error ? out : { explain: out.text };
+  } catch (e) { return { error: '설명 생성 실패: ' + e.message }; }
 }
 
 const server = http.createServer(async (req, res) => {
@@ -67,7 +96,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
 
-  if (p === '/api/health') return send(res, 200, { ok: true });
+  if (p === '/api/health') return send(res, 200, { ok: true, explain: true });
 
   if (!authed(req)) return send(res, 401, { error: '인증 실패(앱 토큰 불일치)' });
 
@@ -95,6 +124,14 @@ const server = http.createServer(async (req, res) => {
   if (p === '/api/report' && req.method === 'POST') {
     const b = await body(req);
     const out = await makeReport(b.name, b.analysis || {});
+    return send(res, out.error ? 502 : 200, out);
+  }
+
+  // AI 선생님: 문제 설명
+  if (p === '/api/explain' && req.method === 'POST') {
+    const b = await body(req);
+    if (!b || !b.question) return send(res, 400, { error: '문제 정보가 없어요.' });
+    const out = await makeExplain(b);
     return send(res, out.error ? 502 : 200, out);
   }
 
