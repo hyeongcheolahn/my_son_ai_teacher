@@ -15,16 +15,30 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const PORT = process.env.PORT || 8787;
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const APP_TOKEN = process.env.APP_TOKEN || '';
-const API_KEY = process.env.ANTHROPIC_API_KEY || '';
-const MODEL = process.env.MODEL || 'claude-opus-4-8';
-const ALLOW_ORIGIN = process.env.ALLOW_ORIGIN || '*';
+// 키 설정은 두 가지 방법 중 아무거나:
+//  (1) 컨테이너 환경변수, 또는
+//  (2) server.js 옆에 keys.json 파일을 두기(컨테이너 재생성 없이 쉽게 추가 가능)
+//      예) keys.json:
+//      { "ELEVENLABS_API_KEY": "...", "ELEVENLABS_VOICE_ID": "...", "ANTHROPIC_API_KEY": "sk-ant-..." }
+function loadKeys() {
+  for (const f of [path.join(__dirname, 'keys.json'), path.join(__dirname, 'data', 'keys.json')]) {
+    try { const o = JSON.parse(fs.readFileSync(f, 'utf8')); if (o && typeof o === 'object') return o; } catch {}
+  }
+  return {};
+}
+const KEYS = loadKeys();
+const cfg = (k, d) => process.env[k] || KEYS[k] || d; // 환경변수 우선, 없으면 keys.json
+
+const PORT = cfg('PORT', 8787);
+const DATA_DIR = cfg('DATA_DIR', path.join(__dirname, 'data'));
+const APP_TOKEN = cfg('APP_TOKEN', '');
+const API_KEY = cfg('ANTHROPIC_API_KEY', '');
+const MODEL = cfg('MODEL', 'claude-opus-4-8');
+const ALLOW_ORIGIN = cfg('ALLOW_ORIGIN', '*');
 // ElevenLabs 음성(자연스러운 읽어주기) — 키가 있을 때만 작동
-const TTS_KEY = process.env.ELEVENLABS_API_KEY || '';
-const TTS_VOICE = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM'; // 기본 Rachel(원하는 한국어 음성 ID로 바꾸세요)
-const TTS_MODEL = process.env.ELEVENLABS_MODEL || 'eleven_multilingual_v2';
+const TTS_KEY = cfg('ELEVENLABS_API_KEY', '');
+const TTS_VOICE = cfg('ELEVENLABS_VOICE_ID', '21m00Tcm4TlvDq8ikWAM'); // 기본 Rachel(원하는 한국어 음성 ID로 바꾸세요)
+const TTS_MODEL = cfg('ELEVENLABS_MODEL', 'eleven_multilingual_v2');
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const TTS_DIR = path.join(DATA_DIR, 'tts');
@@ -180,6 +194,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`[학습서버] 포트 ${PORT}, 데이터 ${DATA_DIR}, 모델 ${MODEL}`);
-  if (!API_KEY) console.log('  ⚠️ ANTHROPIC_API_KEY 미설정 → 동기화는 되지만 AI 리포트는 비활성');
+  console.log(`  AI 선생님: ${API_KEY ? 'ON' : 'OFF(키 없음)'} · 음성(ElevenLabs): ${TTS_KEY ? 'ON' : 'OFF(키 없음)'}`);
   if (!APP_TOKEN) console.log('  ⚠️ APP_TOKEN 미설정 → 누구나 접근 가능(집 안 전용이 아니면 꼭 설정하세요)');
 });
