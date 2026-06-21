@@ -9,3 +9,5 @@
 .vscode/
 .idea/
 server/data/
+server/keys.json
+keys.json
