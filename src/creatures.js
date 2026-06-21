@@ -208,6 +208,7 @@ const STAGE_ENERGY = { 1: 90, 2: 120, 3: 160 };
 // 데이터 항목 → 게임/씬이 쓰는 def 형태로 정규화
 function toDef(item, subject, opts = {}) {
   const stage = item.stage || 1;
+  const leg = !!opts.legendary || !!item.legendary;
   return {
     id: item.id,
     name: item.ko,
@@ -218,9 +219,9 @@ function toDef(item, subject, opts = {}) {
     stage,
     evolvesToId: item.evolvesToId || null,
     subject,
-    isLegendary: !!opts.legendary,
-    scale: opts.legendary ? 1.5 : (STAGE_SCALE[stage] || 1),
-    catchEnergy: opts.legendary ? 280 : (STAGE_ENERGY[stage] || 100),
+    isLegendary: leg,
+    scale: leg ? 1.5 : (STAGE_SCALE[stage] || 1),
+    catchEnergy: leg ? 280 : (STAGE_ENERGY[stage] || 100),
   };
 }
 

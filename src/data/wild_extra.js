@@ -41,6 +41,17 @@ const KANTO = [
   [114, '덩쿠리', 'Tangela', 'grass'], [116, '쏘드라', 'Horsea', 'water'], [118, '콘치', 'Goldeen', 'water'],
   [120, '별가사리', 'Staryu', 'water'], [129, '잉어킹', 'Magikarp', 'water'], [143, '잠만보', 'Snorlax', 'normal'],
   [147, '미뇽', 'Dratini', 'dragon'],
+  // 추가 확대 (1세대 진화형 등)
+  [2, '이상해풀', 'Ivysaur', 'grass'], [24, '아보크', 'Arbok', 'poison'], [28, '고지', 'Sandslash', 'ground'],
+  [40, '푸크린', 'Wigglytuff', 'fairy'], [47, '파라섹트', 'Parasect', 'bug'], [55, '골덕', 'Golduck', 'water'],
+  [59, '윈디', 'Arcanine', 'fire'], [62, '강챙이', 'Poliwrath', 'water'], [65, '후딘', 'Alakazam', 'psychic'],
+  [68, '괴력몬', 'Machamp', 'fighting'], [71, '우츠보트', 'Victreebel', 'grass'], [76, '딱구리', 'Golem', 'rock'],
+  [82, '레어코일', 'Magneton', 'electric'], [85, '두트리오', 'Dodrio', 'normal'], [87, '쥬레곤', 'Dewgong', 'water'],
+  [91, '파르셀', 'Cloyster', 'water'], [94, '팬텀', 'Gengar', 'ghost'], [97, '슬리퍼', 'Hypno', 'psychic'],
+  [112, '코뿌리', 'Rhydon', 'ground'], [121, '아쿠스타', 'Starmie', 'water'], [122, '마임맨', 'MrMime', 'psychic'],
+  [123, '스라크', 'Scyther', 'bug'], [125, '에레브', 'Electabuzz', 'electric'], [126, '마그마', 'Magmar', 'fire'],
+  [127, '쁘사이저', 'Pinsir', 'bug'], [128, '켄타로스', 'Tauros', 'normal'], [131, '라프라스', 'Lapras', 'water'],
+  [137, '폴리곤', 'Porygon', 'normal'], [142, '프테라', 'Aerodactyl', 'rock'],
 ];
 
 // 칼로스(english) — 6세대 (확실한 이름만)
@@ -55,6 +66,11 @@ const KALOS = [
   [702, '데덴네', 'Dedenne', 'electric'], [703, '멜리시', 'Carbink', 'rock'], [707, '클레피', 'Klefki', 'steel'],
   [708, '나목령', 'Phantump', 'ghost'], [710, '호바귀', 'Pumpkaboo', 'ghost'], [712, '빙벌래', 'Bergmite', 'ice'],
   [714, '음뱃', 'Noibat', 'flying'],
+  // 추가 확대 (6세대)
+  [651, '도치보구', 'Quilladin', 'grass'], [654, '테르나', 'Braixen', 'fire'], [657, '개굴반장', 'Frogadier', 'water'],
+  [662, '불화르', 'Fletchinder', 'fire'], [671, '플라제스', 'Florges', 'fairy'], [675, '부란다', 'Pangoro', 'fighting'],
+  [695, '일레도리자드', 'Heliolisk', 'electric'], [697, '견고라스', 'Tyrantrum', 'rock'], [699, '아마루르가', 'Aurorus', 'rock'],
+  [701, '루차불', 'Hawlucha', 'fighting'], [711, '펌킨인', 'Gourgeist', 'ghost'], [715, '음번', 'Noivern', 'flying'],
 ];
 
 // 성도(hanja) — 2세대
@@ -71,6 +87,13 @@ const JOHTO = [
   [225, '딜리버드', 'Delibird', 'ice'], [227, '무장조', 'Skarmory', 'steel'], [228, '델빌', 'Houndour', 'dark'],
   [231, '코코리', 'Phanpy', 'ground'], [234, '노라키', 'Stantler', 'normal'], [238, '뽀뽀라', 'Smoochum', 'ice'],
   [239, '에레키드', 'Elekid', 'electric'], [240, '마그비', 'Magby', 'fire'], [241, '밀탱크', 'Miltank', 'normal'],
+  // 추가 확대 (2세대)
+  [153, '베이리프', 'Bayleef', 'grass'], [156, '마그케인', 'Quilava', 'fire'], [159, '엘리게이', 'Croconaw', 'water'],
+  [164, '야부엉', 'Noctowl', 'flying'], [180, '보송송', 'Flaaffy', 'electric'], [185, '꼬지모', 'Sudowoodo', 'rock'],
+  [195, '늪지밸', 'Quagsire', 'water'], [205, '쏘콘', 'Forretress', 'steel'], [210, '그랑블루', 'Granbull', 'fairy'],
+  [212, '핫삼', 'Scizor', 'bug'], [214, '헤라크로스', 'Heracross', 'bug'], [219, '마그카르고', 'Magcargo', 'fire'],
+  [221, '메꾸리', 'Piloswine', 'ice'], [224, '대포무노', 'Octillery', 'water'], [229, '헬가', 'Houndoom', 'dark'],
+  [232, '코리갑', 'Donphan', 'ground'], [233, '폴리곤2', 'Porygon2', 'normal'], [237, '카포에라', 'Hitmontop', 'fighting'],
 ];
 
 // 호연(science) — 3세대
@@ -89,11 +112,26 @@ const HOENN = [
   [353, '어둠대신', 'Shuppet', 'ghost'], [359, '앱솔', 'Absol', 'dark'], [361, '눈꼬마', 'Snorunt', 'ice'],
   [363, '대굴레오', 'Spheal', 'ice'], [366, '진주몽', 'Clamperl', 'water'], [370, '사랑동이', 'Luvdisc', 'water'],
   [371, '아공이', 'Bagon', 'dragon'], [374, '메탕', 'Beldum', 'steel'],
+  // 추가 확대 (3세대)
+  [264, '직구리', 'Linoone', 'normal'], [267, '뷰티플라이', 'Beautifly', 'bug'], [269, '독케일', 'Dustox', 'poison'],
+  [272, '로파파', 'Ludicolo', 'water'], [275, '다탱구', 'Shiftry', 'grass'], [279, '패리퍼', 'Pelipper', 'water'],
+  [282, '가디안', 'Gardevoir', 'psychic'], [286, '버섯모', 'Breloom', 'grass'], [310, '썬더볼트', 'Manectric', 'electric'],
+  [324, '코터스', 'Torkoal', 'fire'], [330, '플라이곤', 'Flygon', 'dragon'], [332, '밤선인', 'Cacturne', 'grass'],
+  [334, '파비코리', 'Altaria', 'dragon'], [357, '트로피우스', 'Tropius', 'grass'], [376, '메타그로스', 'Metagross', 'steel'],
 ];
 
+// 특별 전설/환상 — 모든 지방에 등장(크고 강하게)
+const SPECIAL = [
+  [718, '지가르데', 'Zygarde', 'dragon'], [493, '아르세우스', 'Arceus', 'normal'],
+  [888, '자시안', 'Zacian', 'fairy'], [889, '자마젠타', 'Zamazenta', 'fighting'],
+  [384, '레쿠쟈', 'Rayquaza', 'dragon'],
+];
+const SP = build(SPECIAL).map((e) => ({ ...e, legendary: true }));
+const SP_NO_RAY = SP.filter((e) => e.id !== 'rayquaza'); // 호연은 레쿠쟈가 이미 보스라 중복 제외
+
 export const EXTRA_WILD = {
-  math: build(KANTO),
-  english: build(KALOS),
-  hanja: build(JOHTO),
-  science: build(HOENN),
+  math: [...build(KANTO), ...SP],
+  english: [...build(KALOS), ...SP],
+  hanja: [...build(JOHTO), ...SP],
+  science: [...build(HOENN), ...SP_NO_RAY],
 };
