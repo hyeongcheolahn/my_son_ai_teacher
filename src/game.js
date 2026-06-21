@@ -323,6 +323,8 @@ export class Game {
     } else {
       def = C.pickWildDef(cs);
     }
+    // 야생으로 전설이 뽑히면 전설 대우(레벨↑·잡기 어려움·특별 메시지)
+    if (def && def.isLegendary) isLegendary = true;
     // 야생 레벨 = 현재 문제 난이도 단계에 비례 (전설은 훨씬 높음)
     const stage = this.engine.state.current || 0;
     const maxStage = Math.max(1, this.engine.skillsCount() - 1);
@@ -338,7 +340,8 @@ export class Game {
     $('catch-btn').classList.add('hidden');
     this.state.dexSeen[def.id] = true;
 
-    if (isLegendary) this.showMessage(`👑 졸업 시험! 전설의 ${def.name}!`, '#ffd23f', 1800);
+    if (graduation) this.showMessage(`👑 졸업 시험! 전설의 ${def.name}!`, '#ffd23f', 1800);
+    else if (isLegendary) this.showMessage(`✨ 전설의 ${def.name} 출현!! 잡아보자!`, '#ffd23f', 1800);
     else this.showMessage(`앗! 야생 ${def.name} 등장!`, '#ffd23f', 1100);
 
     storage.save(this.state);
