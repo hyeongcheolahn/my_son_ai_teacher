@@ -29,6 +29,14 @@ export const DEX = {
   zigzagoon: 263, linoone: 264,
   ralts: 280, kirlia: 281, gardevoir: 282,
   rayquaza: 384,
+  // 추가 출현(다양화) — 관동
+  rattata: 19, pidgey: 16, meowth: 52, machop: 66, geodude: 74, gastly: 92, magikarp: 129, snorlax: 143,
+  // 칼로스
+  litleo: 667, pancham: 674, espurr: 677, sylveon: 700, noibat: 714, skiddo: 672, furfrou: 676, flabebe: 669,
+  // 성도
+  wooper: 194, sentret: 161, sneasel: 215, teddiursa: 216, houndour: 228, phanpy: 231, togepi: 175, slugma: 218,
+  // 호연
+  poochyena: 261, wingull: 278, aron: 304, electrike: 309, numel: 322, spheal: 363, bagon: 371, shroomish: 285,
 };
 
 // id(종 이름) 또는 폼 아트 번호(예: 10034 = 메가 리자몽 X) 둘 다 허용

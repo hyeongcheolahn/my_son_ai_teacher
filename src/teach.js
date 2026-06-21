@@ -125,3 +125,45 @@ function explainShape(answer, shape) {
     speak: `정답은 ${answer}이에요. ${shape.desc}`,
   };
 }
+
+// ---- 힌트(정답을 알려주지 않고 스스로 풀게 도와주기) -----------------------
+export function hintQuestion(q) {
+  if (!q) return null;
+  if (q.kind === 'trace') return null;
+  if (q.meta && q.meta.kind === 'arith') return hintArith(q.meta);
+  if (q.clock) return {
+    title: '💡 힌트',
+    html: `<div class="td-text">짧은 바늘은 <b>'시'</b>, 긴 바늘은 <b>'분'</b>이에요.<br>두 바늘을 천천히 보고 다시 골라볼까? 🕐</div>`,
+    speak: '짧은 바늘은 시, 긴 바늘은 분이에요. 천천히 다시 보자!',
+  };
+  if (SHAPE_INFO[String(q.answer).trim()]) return {
+    title: '💡 힌트',
+    html: `<div class="td-text">모양의 <b>면이 몇 개</b>인지, <b>둥근지 뾰족한지</b> 잘 살펴봐! 🔍</div>`,
+    speak: '면이 몇 개인지, 둥근지 뾰족한지 살펴보자!',
+  };
+  return {
+    title: '💡 힌트',
+    html: `<div class="td-text">조금만 더 생각해 보자! 문제를 한 번 더 천천히 읽어볼까? 🤔</div>`,
+    speak: '조금만 더 생각해 보자. 문제를 다시 천천히 읽어 볼까?',
+  };
+}
+
+function hintArith({ op, a, b, item, unit }) {
+  const u = unit || '개';
+  const who = item ? esc(item) + ' ' : '';
+  if (op === '+') {
+    const visual = (a + b <= 24) ? `<div class="td-visual">${group(a, COLORS[0])}<span class="td-op">＋</span>${group(b, COLORS[1])}<span class="td-op">＝</span><b class="td-ans">?</b></div>` : '';
+    return { title: '💡 힌트: 모으기', html: `${visual}<div class="td-text">${who}<b>${a}</b>${u}와 <b>${b}</b>${u}를 함께 세어 보자! 🖐️</div>`, speak: `${who}${a}${u}와 ${b}${u}를 함께 세어 보자!` };
+  }
+  if (op === '-') {
+    const visual = (a <= 24) ? `<div class="td-visual">${takeAway(a, b)}<span class="td-op">＝</span><b class="td-ans">?</b></div>` : '';
+    return { title: '💡 힌트: 덜어내기', html: `${visual}<div class="td-text">${who}<b>${a}</b>${u}에서 <b>${b}</b>${u}를 빼고 <b>남은 걸 세어</b> 봐!</div>`, speak: `${who}${a}${u}에서 ${b}${u}를 빼고 남은 걸 세어 보자!` };
+  }
+  if (op === '×') {
+    return { title: '💡 힌트: 여러 번 더하기', html: `<div class="td-text"><b>${a}</b>을(를) <b>${b}</b>번 더해 보자!<br>${Array(b).fill(a).join(' ＋ ')} = ?</div>`, speak: `${a}을 ${b}번 더해 보자!` };
+  }
+  if (op === '÷') {
+    return { title: '💡 힌트: 똑같이 나누기', html: `<div class="td-text"><b>${a}</b>개를 <b>${b}</b>묶음으로 똑같이 나눠 담아 봐. 한 묶음에 몇 개? 🧺</div>`, speak: `${a}개를 ${b}묶음으로 똑같이 나눠 담아 보자. 한 묶음에 몇 개일까?` };
+  }
+  return { title: '💡 힌트', html: `<div class="td-text">천천히 다시 풀어 볼까? 🤔</div>`, speak: '천천히 다시 풀어 보자!' };
+}
