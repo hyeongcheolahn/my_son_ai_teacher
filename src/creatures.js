@@ -5,6 +5,7 @@ import { EXTRA } from './data/extra.js';
 import { EXTRA2, EXTRA_LEVELS } from './data/extra2.js';
 import { EXTRA3, EXTRA_LEVELS3 } from './data/extra3.js';
 import { EXTRA4 } from './data/extra4.js';
+import { EXTRA_WILD } from './data/wild_extra.js';
 
 export const SUBJECTS = [
   { key: 'math', label: '수학 (+도형·시계)', region: '관동', emoji: '➕' },
@@ -16,6 +17,14 @@ export const SUBJECTS = [
 
 // 실제 지방(수학~과학) 키. 랜덤 모드 제외.
 export const REAL_SUBJECTS = ['math', 'english', 'hanja', 'science'];
+
+// 추가 출현(야생) 포켓몬을 지방별 야생 목록에 합친다(다양화). 중복 id는 제외.
+for (const s of REAL_SUBJECTS) {
+  const r = REGIONS[s];
+  if (!r || !Array.isArray(r.wild) || !EXTRA_WILD[s]) continue;
+  const have = new Set(r.wild.map((w) => w.id));
+  for (const e of EXTRA_WILD[s]) if (!have.has(e.id)) r.wild.push(e);
+}
 
 // 자체 포켓몬 지방이 없는 과목은 다른 지방의 포켓몬을 빌려 쓴다.(현재 없음)
 const CREATURE_ALIAS = {};

@@ -12,7 +12,7 @@ import { requestMotionPermission, hasMotion, armThrow, disarmThrow } from './mot
 import { getStrokes } from './data/strokes.js';
 import { speak, speakSupported, speakFriendly } from './tts.js';
 import { buildAnalysis, buildReportText } from './analytics.js';
-import { explainQuestion } from './teach.js';
+import { explainQuestion, hintQuestion } from './teach.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -401,19 +401,25 @@ export class Game {
     sfx.tap();
     const correct = String(value) === String(this.q.answer);
     this.lastWrong = correct ? null : value; // AI 선생님 설명에 쓸 '아이가 고른 답'
+    // 같은 문제를 몇 번 틀렸는지 추적 → 3번 이상이면 그제서야 정답 공개
+    const key = String(this.q.text);
+    if (correct) { this._wrongCount = 0; }
+    else { this._wrongCount = (this._wrongKey === key ? (this._wrongCount || 0) : 0) + 1; this._wrongKey = key; }
+    const reveal = !correct && this._wrongCount >= 3;
     const buttons = [...document.querySelectorAll('#choices .choice')];
     buttons.forEach((b) => (b.disabled = true));
     if (correct) {
       btn.classList.add('correct');
     } else {
       btn.classList.add('wrong');
-      buttons.find((b) => String(b.textContent) === String(this.q.answer))?.classList.add('correct');
+      // 힌트 단계에선 정답을 표시하지 않음(3번 이상 틀렸을 때만 공개)
+      if (reveal) buttons.find((b) => String(b.textContent) === String(this.q.answer))?.classList.add('correct');
     }
-    this.resolveAnswer(correct);
+    this.resolveAnswer(correct, reveal);
   }
 
   // 정답/오답 공통 처리. 오답이면 진도가 오르지 않고 같은 문제를 다시 낸다.
-  resolveAnswer(correct) {
+  resolveAnswer(correct, reveal) {
     const time = performance.now() - this.qStart;
     // 분석용 로그 기록(최근 1000개 유지)
     if (!this.state.log) this.state.log = [];
@@ -437,7 +443,7 @@ export class Game {
         this.showMessage('이제 같은 문제 다시 도전! 💪', '#ff7a9c', 1100);
         this.enemyCounter(() => this.afterAnswer(promoted, false));
       };
-      try { this.showTeach(this.q, cont); } catch (e) { console.error('teach 오류(무시):', e); cont(); }
+      try { this.showTeach(this.q, cont, reveal); } catch (e) { console.error('teach 오류(무시):', e); cont(); }
     }
     this.refreshTop();
     storage.save(this.state);
@@ -478,11 +484,14 @@ export class Game {
     this._openTeach(title, body, '좋아, 풀어볼게! ▶', null, sample, null, ex && ex.speak);
   }
 
-  showTeach(q, onDone) {
-    const ex = explainQuestion(q);
+  showTeach(q, onDone, reveal) {
+    // 기본은 '힌트'만(정답 비공개). 3번 이상 틀리면(reveal) 정답+설명 공개.
+    const ex = reveal ? explainQuestion(q) : hintQuestion(q);
     if (!ex) { if (onDone) onDone(); return; } // 설명 없는 유형(따라쓰기 등)은 그냥 진행
     const body = `<div class="teach-explain"><div class="teach-explain-title">${ex.title}</div>${ex.html}</div>`;
-    this._openTeach('앗, 같이 다시 볼까? 🤔', body, '알겠어! 다시 풀기 ▶', onDone, q, this.lastWrong, ex.speak);
+    const title = reveal ? '정답을 같이 볼까? 💡' : '앗! 힌트를 줄게 🤔';
+    const btn = reveal ? '알겠어! 다시 풀기 ▶' : '힌트 보고 다시! ▶';
+    this._openTeach(title, body, btn, onDone, q, this.lastWrong, ex.speak, !reveal);
   }
 
   // 읽어주기: NAS에 자연스러운 음성(ElevenLabs)이 있으면 그걸로, 없으면 브라우저 음성으로.
@@ -500,11 +509,11 @@ export class Game {
   }
 
   // 🤖 AI 선생님: NAS의 Claude가 이 문제를 아이 눈높이로 더 자세히 설명
-  askAiTutor(q, studentAnswer) {
+  askAiTutor(q, studentAnswer, hint) {
     const out = $('teach-ai');
     $('teach-ai-btn').classList.add('hidden');
     out.classList.remove('hidden');
-    out.textContent = '🤖 AI 선생님이 설명을 준비하고 있어요… 잠깐만!';
+    out.textContent = hint ? '🤖 AI 선생님이 힌트를 생각하고 있어요… 잠깐만!' : '🤖 AI 선생님이 설명을 준비하고 있어요… 잠깐만!';
     storage.aiExplain({
       name: this._profileName(),
       subject: q.subjectTag || this.state.currentSubject,
@@ -512,6 +521,7 @@ export class Game {
       choices: q.choices,
       correctAnswer: q.answer,
       studentAnswer: studentAnswer != null ? studentAnswer : undefined,
+      hint: !!hint,
     })
       .then((r) => {
         const msg = (r && r.explain) ? r.explain : (r && r.error) ? '오류: ' + r.error : '응답을 받지 못했어요.';
@@ -525,7 +535,7 @@ export class Game {
       });
   }
 
-  _openTeach(title, bodyHtml, btnLabel, onDone, q, studentAnswer, speakText) {
+  _openTeach(title, bodyHtml, btnLabel, onDone, q, studentAnswer, speakText, hint) {
     // 안전장치: 핵심 요소가 없으면(구버전 캐시 등) 모달을 띄우지 않고 그냥 진행 → 게임이 멈추지 않음
     const modal = $('teach-modal'), btn = $('teach-go'), bodyEl = $('teach-body');
     if (!modal || !btn || !bodyEl) { if (onDone) onDone(); return; }
@@ -543,7 +553,8 @@ export class Game {
     if (aiBtn) {
       if (q && storage.syncOn()) {
         aiBtn.classList.remove('hidden');
-        aiBtn.onclick = () => { sfx.tap(); this.askAiTutor(q, studentAnswer); };
+        aiBtn.textContent = hint ? '🤖 AI 선생님께 힌트 더 받기' : '🤖 AI 선생님께 더 물어보기';
+        aiBtn.onclick = () => { sfx.tap(); this.askAiTutor(q, studentAnswer, hint); };
       } else {
         aiBtn.classList.add('hidden');
       }
@@ -917,7 +928,7 @@ export class Game {
 
   // ---- 포켓몬 상식 퀴즈(중간중간 등장) -----------------------------------
   maybePokemonQuiz(cb) {
-    if (Math.random() < 0.28) this.startPokemonQuiz(cb);
+    if (Math.random() < 0.5) this.startPokemonQuiz(cb);
     else cb();
   }
 
