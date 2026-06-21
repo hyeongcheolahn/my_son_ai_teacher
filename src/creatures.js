@@ -251,11 +251,14 @@ export function legendaryDef(subject) {
   return toDef(REGIONS[subject].legendary, subject, { legendary: true });
 }
 
-// 야생 등장: 기본형(1단계) 위주로(잡아서 진화시키는 재미)
+// 야생 등장: 기본형(1단계) 위주로(잡아서 진화시키는 재미). 전설은 드물게(4%).
 export function pickWildDef(subject, rng = Math.random) {
   const wild = REGIONS[subject].wild;
-  const base = wild.filter((w) => (w.stage || 1) === 1);
-  const pool = rng() < 0.75 && base.length ? base : wild;
+  const legends = wild.filter((w) => w.legendary);
+  if (legends.length && rng() < 0.04) return toDef(legends[Math.floor(rng() * legends.length)], subject);
+  const normal = wild.filter((w) => !w.legendary);
+  const base = normal.filter((w) => (w.stage || 1) === 1);
+  const pool = rng() < 0.75 && base.length ? base : normal;
   return toDef(pool[Math.floor(rng() * pool.length)], subject);
 }
 
