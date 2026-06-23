@@ -40,6 +40,7 @@
       <button id="review-btn" class="icon-btn" title="복습">📝<span id="review-badge" class="badge hidden">0</span></button>
       <button id="party-btn" class="icon-btn" title="파티/교체">🎒</button>
       <button id="dex-btn" class="icon-btn" title="도감">📕</button>
+      <button id="collection-btn" class="icon-btn" title="업적·스티커">🏅<span id="collection-badge" class="badge hidden">0</span></button>
       <button id="parent-btn" class="icon-btn" title="부모 보기">👨‍👩‍👦</button>
     </header>
 
@@ -80,6 +81,29 @@
         <h2>📕 포켓 도감</h2>
         <div id="dex-grid"></div>
         <button class="close-btn" data-close="dex-modal">닫기</button>
+      </div>
+    </div>
+
+    <!-- 업적 / 스티커 앨범 모달 -->
+    <div id="collection-modal" class="modal hidden">
+      <button class="modal-x" data-close="collection-modal" aria-label="닫기">✕</button>
+      <div class="modal-box">
+        <h2>🏅 나의 컬렉션</h2>
+        <div class="coll-tabs">
+          <button id="tab-ach" class="coll-tab active">🏅 업적</button>
+          <button id="tab-sticker" class="coll-tab">✨ 스티커</button>
+        </div>
+        <div id="coll-ach" class="coll-pane"></div>
+        <div id="coll-sticker" class="coll-pane hidden"></div>
+        <button class="close-btn" data-close="collection-modal">닫기</button>
+      </div>
+    </div>
+
+    <!-- 미니게임 모달 (중간중간 등장) -->
+    <div id="minigame-modal" class="modal hidden">
+      <div class="modal-box">
+        <h2>🕹️ 미니게임 타임!</h2>
+        <div id="minigame-body"></div>
       </div>
     </div>
 
@@ -128,6 +152,7 @@
             <button id="report-offline-btn" class="report-btn">📊 빠른 리포트</button>
             <button id="report-ai-btn" class="report-btn ai">🤖 AI 분석 리포트</button>
           </div>
+          <button id="weekly-now-btn" class="report-btn nav-full">📅 주간 리포트 지금 보내기</button>
           <pre id="report-out" class="report-out hidden"></pre>
           <details class="sync-set">
             <summary>☁️ NAS 동기화 설정</summary>
@@ -139,7 +164,7 @@
         </div>
 
         <button id="reset-btn" class="reset-btn">진행도 초기화</button>
-        <div class="app-ver">버전 2026-06-20 · v17 (전체 점검 + 전설 밸런스)</div>
+        <div class="app-ver">버전 2026-06-23 · v18 (업적·스티커·한글과목·주간리포트·미니게임)</div>
         <button class="close-btn" data-close="parent-modal">닫기</button>
       </div>
     </div>

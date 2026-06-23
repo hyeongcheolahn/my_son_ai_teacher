@@ -4,6 +4,7 @@
 
 1. **동기화 저장소** — 모든 기기(아빠폰·엄마폰·태블릿)의 진도·프로필·학습로그를 한곳에 저장 → 어디서 접속해도 같은 데이터
 2. **AI 분석 리포트** — 모아진 학습 데이터를 Claude로 분석해 학부모용 리포트 생성
+3. **주간 리포트 자동 발송** — 매주 한 번 Claude가 한 주를 요약해 디스코드/슬랙 등으로 자동 알림
 
 > 의존성이 전혀 없어요. **Node.js 18 이상**만 있으면 됩니다. (`npm install` 불필요)
 
@@ -43,6 +44,9 @@ services:
       # (선택) 자연스러운 읽어주기 음성 — ElevenLabs
       ELEVENLABS_API_KEY: "여기에_ElevenLabs_키"
       ELEVENLABS_VOICE_ID: "21m00Tcm4TlvDq8ikWAM"  # 원하는 한국어 음성 ID로 교체 권장
+      # (선택) 주간 리포트 자동 발송 — 디스코드/슬랙 Incoming Webhook 주소
+      WEEKLY_WEBHOOK: "https://discord.com/api/webhooks/..."  # 비우면 발송 없이 서버에만 저장
+      WEEKLY_DAYS: "7"   # 발송 주기(일)
     command: node server.js
     ports:
       - "8787:8787"
@@ -84,7 +88,16 @@ cloudflared tunnel --url http://localhost:8787
 
 ---
 
-## 5) 보안 메모
+## 5) 주간 리포트 자동 발송 (선택)
+- **디스코드**: 서버 채널 설정 → 연동(Integrations) → 웹후크 → 새 웹후크 → URL 복사 → `WEEKLY_WEBHOOK`에 붙여넣기
+- **슬랙**: Incoming Webhook URL을 같은 변수에 넣으면 됩니다(`content`/`text` 둘 다 보내 어느 쪽이든 동작).
+- 설정하면 `WEEKLY_DAYS`(기본 7일)마다 한 번, 그 주에 공부한 아이별로 Claude가 요약해 자동 전송합니다.
+- 앱의 **부모 보기 → 📅 주간 리포트 지금 보내기** 버튼으로 즉시 보낼 수도 있어요(테스트용).
+- 웹훅을 비워 두면 발송 없이 `data/weekly-<프로필>.json`에 저장만 합니다.
+
+---
+
+## 6) 보안 메모
 - `APP_TOKEN`을 꼭 설정하세요(빈 값이면 누구나 접근 가능).
 - **API 키는 NAS 안에만** 두세요. 게임(공개 사이트)에는 절대 넣지 않습니다 — 그래서 이 중계 서버가 필요한 거예요.
 - 외부 노출이 부담되면 집 와이파이에서만 쓰고, 외출 시엔 동기화를 꺼도 됩니다(앱은 오프라인으로도 동작).

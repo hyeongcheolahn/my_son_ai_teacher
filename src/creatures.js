@@ -6,9 +6,11 @@ import { EXTRA2, EXTRA_LEVELS } from './data/extra2.js';
 import { EXTRA3, EXTRA_LEVELS3 } from './data/extra3.js';
 import { EXTRA4 } from './data/extra4.js';
 import { EXTRA_WILD } from './data/wild_extra.js';
+import { KOREAN_LEVELS } from './data/korean.js';
 
 export const SUBJECTS = [
   { key: 'math', label: '수학 (+도형·시계)', region: '관동', emoji: '➕' },
+  { key: 'korean', label: '한글 (글자·낱말)', region: '한글마을', emoji: '📖' },
   { key: 'english', label: '영어', region: '칼로스', emoji: '🔤' },
   { key: 'hanja', label: '한자', region: '성도', emoji: '㐀' },
   { key: 'science', label: '과학', region: '호연', emoji: '🔬' },
@@ -26,8 +28,9 @@ for (const s of REAL_SUBJECTS) {
   for (const e of EXTRA_WILD[s]) if (!have.has(e.id)) r.wild.push(e);
 }
 
-// 자체 포켓몬 지방이 없는 과목은 다른 지방의 포켓몬을 빌려 쓴다.(현재 없음)
-const CREATURE_ALIAS = {};
+// 자체 포켓몬 지방이 없는 과목은 다른 지방의 포켓몬을 빌려 쓴다.
+// 한글(글자) 과목은 성도(한자) 포켓몬을 함께 쓴다.
+const CREATURE_ALIAS = { korean: 'hanja' };
 export function creatureSubject(subject) { return CREATURE_ALIAS[subject] || subject; }
 
 // 문제은행 + 추가 문제(extra.js, extra2.js)를 합친 레벨 묶음을 만든다.
@@ -45,8 +48,8 @@ function dedupeItems(items) {
   return out;
 }
 
-const ADD_SOURCES = [EXTRA, EXTRA2, EXTRA3, EXTRA4];          // 기존 단계에 문제 추가
-const NEW_LEVEL_SOURCES = [EXTRA_LEVELS, EXTRA_LEVELS3];      // 새 단계 추가
+const ADD_SOURCES = [EXTRA, EXTRA2, EXTRA3, EXTRA4];                 // 기존 단계에 문제 추가
+const NEW_LEVEL_SOURCES = [EXTRA_LEVELS, EXTRA_LEVELS3, KOREAN_LEVELS]; // 새 단계 추가(+한글 과목 전체)
 
 export function buildBank(subject) {
   const r = REGIONS[subject];
@@ -271,9 +274,10 @@ export function evolveDef(subject, id) {
 
 // 도감용: 그 지방 전체(야생 + 전설). 랜덤 모드는 모든 지방을 합친다.
 export function allDexDefs(subject) {
-  if (subject === 'random' || !REGIONS[subject]) {
+  const cs = creatureSubject(subject); // 한글 등 별칭 과목은 빌려 쓰는 지방의 도감을 보여준다
+  if (subject === 'random' || !REGIONS[cs]) {
     return REAL_SUBJECTS.flatMap((s) => [...REGIONS[s].wild.map((w) => toDef(w, s)), legendaryDef(s)]);
   }
-  const r = REGIONS[subject];
-  return [...r.wild.map((w) => toDef(w, subject)), legendaryDef(subject)];
+  const r = REGIONS[cs];
+  return [...r.wild.map((w) => toDef(w, cs)), legendaryDef(cs)];
 }

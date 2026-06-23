@@ -5,7 +5,7 @@ import { BankEngine } from './bankengine.js';
 import { RandomEngine } from './randomengine.js';
 import * as C from './creatures.js';
 
-const SUBJECT_LABEL = { math: '수학', english: '영어', hanja: '한자', science: '과학', random: '랜덤' };
+const SUBJECT_LABEL = { math: '수학', korean: '한글', english: '영어', hanja: '한자', science: '과학', random: '랜덤' };
 
 function engineFor(subject, st) {
   try {

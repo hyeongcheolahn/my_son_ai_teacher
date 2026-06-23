@@ -13,6 +13,9 @@ import { getStrokes } from './data/strokes.js';
 import { speak, speakSupported, speakFriendly } from './tts.js';
 import { buildAnalysis, buildReportText } from './analytics.js';
 import { explainQuestion, hintQuestion } from './teach.js';
+import { ACHIEVEMENTS, checkAchievements, achievementProgress } from './achievements.js';
+import { STICKERS, drawSticker, addSticker, rarityColor, rarityLabel } from './stickers.js';
+import { playRandomMiniGame } from './minigames.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -39,9 +42,26 @@ export class Game {
     this.engine = null;
     this.pendingEvolutions = 0;
     if (!this.state.review) this.state.review = [];
+    if (!this.state.achievements) this.state.achievements = {};
+    if (!this.state.stickers) this.state.stickers = {};
+    this._achQueue = [];
+    this._updateStreak();
     this.bindUI();
     this.applyProfile();
     this.updateReviewBadge();
+    // 시작 시 이미 충족된 누적 업적은 조용히 채워 둔다(토스트 없이).
+    checkAchievements(this.state, {});
+    this.updateCollectionBadge();
+    storage.save(this.state);
+  }
+
+  // 하루 1회: 연속 학습(streak) 갱신. 어제 놀았으면 +1, 아니면 1로 리셋.
+  _updateStreak() {
+    const today = new Date().toISOString().slice(0, 10);
+    if (this.state.lastPlayDay === today) return;
+    const yest = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+    this.state.streak = this.state.lastPlayDay === yest ? (this.state.streak || 0) + 1 : 1;
+    this.state.lastPlayDay = today;
   }
 
   applyProfile() {
@@ -70,6 +90,10 @@ export class Game {
     on('catch-btn', () => this.throwBall());
     on('transform-btn', () => this.doTransform());
     on('dex-btn', () => this.openDex());
+    on('collection-btn', () => this.openCollection());
+    on('tab-ach', () => this.switchCollectionTab('ach'));
+    on('tab-sticker', () => this.switchCollectionTab('sticker'));
+    on('weekly-now-btn', () => this.sendWeeklyNow());
     on('parent-btn', () => this.openParent());
     on('party-btn', () => this.openParty());
     on('region-btn', () => this.openSubjectSelect());
@@ -233,14 +257,17 @@ export class Game {
       const next = C.evolveDef(o.subject, o.speciesId);
       o.speciesId = next.id; this.state.dexSeen[next.id] = true;
       this.showMessage(`✨ ${next.name}(으)로 진화!`, '#ffd23f', 1900);
+      this._award({ evolved: true });
     } else if (t.kind === 'tera') {
       o.tera = true;
       this.showMessage(`💎 테라스탈! ${C.getCreatureDef(o.subject, o.speciesId).name}`, '#7fe3ff', 2100);
       this.scene.screenShake(0.5, 0.55);
+      this._award({ tera: true });
     } else {
       o.form = t.kind;
       this.showMessage(`${t.icon} ${C.superForm(o.speciesId, t.kind).name}!`, '#ffd23f', 2100);
       this.scene.screenShake(0.4, 0.5);
+      this._award(t.kind === 'mega' ? { mega: true } : {});
     }
     const disp = this.displayDef(o);
     this.scene.evolveAlly(disp);
@@ -285,6 +312,7 @@ export class Game {
     sfx.levelup();
     const def = this.displayDef(o);
     this.showMessage(`⬆️ ${def.name} Lv.${o.lv}!`, '#ffd23f', 1300);
+    if (Math.random() < 0.45) this._grantSticker(1); // 레벨업 깜짝 스티커
     if (o.uid === this.state.activeUid) {
       this.refreshAllyName(o);
       this.scene.screenShake(0.15, 0.25);
@@ -831,7 +859,7 @@ export class Game {
   }
 
   afterAnswer(promoted, correct) {
-    if (correct) this.gainXp(2); // 정답 → 출전 포켓몬 경험치 (레벨업·진화는 여기서)
+    if (correct) { this.gainXp(2); this._award({}); } // 정답 → 경험치 + 업적 점검
     this.refreshTop();
     if (promoted) {
       setTimeout(() => {
@@ -909,6 +937,8 @@ export class Game {
     }
     this.refreshTop();
     storage.save(this.state);
+    this._award({}); // 포획/졸업 업적 점검
+    this._grantSticker(enemy.isLegendary ? 3 : 1); // 새 친구 기념 스티커(전설은 귀한 확률↑)
     this.scene.removeEnemy();
     setTimeout(() => this.betweenBattle(), enemy.isLegendary ? 2500 : 1900);
   }
@@ -926,7 +956,7 @@ export class Game {
   }
 
   betweenBattle() {
-    this.maybeEvolveThen(() => this.maybePokemonQuiz(() => this.spawnWild()));
+    this.maybeEvolveThen(() => this.maybeMiniGame(() => this.maybePokemonQuiz(() => this.spawnWild())));
   }
 
   // ---- 포켓몬 상식 퀴즈(중간중간 등장) -----------------------------------
@@ -1009,6 +1039,7 @@ export class Game {
       $('ally-name').textContent = next.name;
     }
     storage.save(this.state);
+    this._award({ evolved: true });
   }
 
   // ---- 파티 교체 ---------------------------------------------------------
@@ -1263,10 +1294,13 @@ export class Game {
     this.inExam = false;
     $('exam-modal').classList.add('hidden');
     if (passed) {
+      const perfect = this.examScore >= this.examQs.length;
       const promoted = this.engine.passExam();
       sfx.levelup();
       this.showMessage(promoted ? `🎉 ${promoted.toLabel} 단계로!` : '🎉 마지막 단계 통과! 졸업 시험 준비!', '#ffd23f', 2400);
       this.scene.screenShake(0.3, 0.45);
+      this._award({ examPassed: true, perfectExam: perfect });
+      this._grantSticker(perfect ? 2 : 1);
     } else {
       this.engine.failExam();
       this.showMessage('조금 더 연습하고 다시 도전하자! 💪', '#ff9a8a', 2200);
@@ -1312,6 +1346,152 @@ export class Game {
     el.classList.add('show');
     clearTimeout(this._msgT);
     this._msgT = setTimeout(() => el.classList.remove('show'), dur);
+  }
+
+  // ---- 업적 / 스티커 / 토스트 -------------------------------------------
+  // 누적·이벤트 업적을 점검하고, 새로 달성된 건 토스트 + 보상 스티커.
+  _award(ctx) {
+    const newly = checkAchievements(this.state, ctx || {});
+    for (const a of newly) {
+      this._enqueueToast({ icon: a.icon, title: '🏅 업적 달성!', name: a.title, color: '#ffd23f' });
+      this._grantSticker(1.5, true); // 업적 보상 스티커(토스트는 업적만)
+    }
+    if (newly.length) { this.updateCollectionBadge(); storage.save(this.state); }
+    return newly;
+  }
+
+  // 스티커 한 장 지급(가챠). luck>1이면 귀한 게 더 잘 나옴.
+  _grantSticker(luck = 1, silent = false) {
+    const s = drawSticker(Math.random, luck);
+    addSticker(this.state, s.id);
+    if (!silent) this._enqueueToast({ icon: s.emoji, title: '✨ 스티커 획득!', name: `${s.name} (${rarityLabel(s.rarity)})`, color: rarityColor(s.rarity) });
+    // 스티커 수집으로 업적이 달성될 수 있음
+    for (const a of checkAchievements(this.state, {})) this._enqueueToast({ icon: a.icon, title: '🏅 업적 달성!', name: a.title, color: '#ffd23f' });
+    this.updateCollectionBadge();
+    storage.save(this.state);
+    return s;
+  }
+
+  _enqueueToast(t) { this._achQueue.push(t); if (!this._toastBusy) this._drainToasts(); }
+  _drainToasts() {
+    const t = this._achQueue.shift();
+    if (!t) { this._toastBusy = false; return; }
+    this._toastBusy = true;
+    sfx.levelup();
+    const el = document.createElement('div');
+    el.className = 'ach-toast';
+    el.style.setProperty('--ac', t.color || '#ffd23f');
+    el.innerHTML = `<span class="ach-ic">${t.icon}</span><span class="ach-tx"><b>${escapeText(t.title)}</b><span>${escapeText(t.name)}</span></span>`;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 360); this._drainToasts(); }, 2100);
+  }
+
+  updateCollectionBadge() {
+    const b = $('collection-badge'); if (!b) return;
+    const unlocked = Object.keys(this.state.achievements || {}).length;
+    const fresh = Math.max(0, unlocked - (this.state.achSeen || 0));
+    if (fresh > 0) { b.textContent = fresh; b.classList.remove('hidden'); } else b.classList.add('hidden');
+  }
+
+  // ---- 컬렉션(업적 + 스티커) 모달 --------------------------------------
+  openCollection() {
+    sfx.tap();
+    this.renderAchievements();
+    this.renderStickers();
+    this.switchCollectionTab(this._collTab || 'ach');
+    this.state.achSeen = Object.keys(this.state.achievements || {}).length;
+    this.updateCollectionBadge();
+    storage.save(this.state);
+    $('collection-modal').classList.remove('hidden');
+  }
+
+  switchCollectionTab(tab) {
+    this._collTab = tab;
+    const ta = $('tab-ach'), ts = $('tab-sticker');
+    if (ta) ta.classList.toggle('active', tab === 'ach');
+    if (ts) ts.classList.toggle('active', tab === 'sticker');
+    const pa = $('coll-ach'), ps = $('coll-sticker');
+    if (pa) pa.classList.toggle('hidden', tab !== 'ach');
+    if (ps) ps.classList.toggle('hidden', tab !== 'sticker');
+  }
+
+  renderAchievements() {
+    const wrap = $('coll-ach'); if (!wrap) return;
+    const prog = achievementProgress(this.state);
+    let html = `<div class="coll-progress">달성 <b>${prog.done}</b> / ${prog.total}</div><div class="ach-grid">`;
+    for (const a of ACHIEVEMENTS) {
+      const got = !!(this.state.achievements && this.state.achievements[a.id]);
+      html += `<div class="ach-cell${got ? '' : ' locked'}">
+        <div class="ach-cell-ic">${got ? a.icon : '🔒'}</div>
+        <div class="ach-cell-t">${got ? escapeText(a.title) : '???'}</div>
+        <div class="ach-cell-d">${got ? escapeText(a.desc) : '아직 잠겨 있어요'}</div>
+      </div>`;
+    }
+    wrap.innerHTML = html + '</div>';
+  }
+
+  renderStickers() {
+    const wrap = $('coll-sticker'); if (!wrap) return;
+    const owned = this.state.stickers || {};
+    const distinct = STICKERS.filter((s) => owned[s.id]).length;
+    const total = Object.values(owned).reduce((a, c) => a + c, 0);
+    let html = `<div class="coll-progress">모은 종류 <b>${distinct}</b> / ${STICKERS.length} · 총 ${total}장</div><div class="sticker-grid">`;
+    for (const s of STICKERS) {
+      const n = owned[s.id] || 0;
+      html += `<div class="sticker-cell${n ? '' : ' locked'}" style="--rc:${rarityColor(s.rarity)}">
+        <div class="sticker-em">${n ? s.emoji : '❔'}</div>
+        <div class="sticker-nm">${n ? escapeText(s.name) : '???'}</div>
+        ${n > 1 ? `<div class="sticker-x">×${n}</div>` : ''}
+      </div>`;
+    }
+    wrap.innerHTML = html + '</div>';
+  }
+
+  // ---- 미니게임 ---------------------------------------------------------
+  // 배틀 사이 약 35% 확률로 등장. 끝나면 경험치(+승리 시 스티커) 보상.
+  maybeMiniGame(cb) {
+    if (Math.random() < 0.35) this.startMiniGame(cb);
+    else cb();
+  }
+
+  startMiniGame(cb) {
+    const host = $('minigame-body'), modal = $('minigame-modal');
+    if (!host || !modal) { cb(); return; }
+    modal.classList.remove('hidden');
+    playRandomMiniGame(host, { sfx, rng: Math.random })
+      .then((res) => {
+        modal.classList.add('hidden');
+        if (res && res.xp) this.gainXp(res.xp);
+        if (res && res.win) {
+          this.showMessage(`🕹️ ${res.title} 성공! 경험치 +${res.xp}`, '#ffd23f', 1600);
+          this._award({ minigameWin: true });
+          this._grantSticker(1.2);
+        }
+        this.refreshTop();
+        cb();
+      })
+      .catch((e) => { console.error('미니게임 오류(무시):', e); modal.classList.add('hidden'); cb(); });
+  }
+
+  // ---- 주간 리포트 지금 보내기 ------------------------------------------
+  sendWeeklyNow() {
+    sfx.tap();
+    const out = $('report-out');
+    if (out) out.classList.remove('hidden');
+    if (!storage.syncOn()) { if (out) out.textContent = '먼저 아래 ☁️ NAS 동기화 설정에서 서버 주소를 연결해 주세요.\n(주간 리포트는 NAS 서버가 Claude로 분석해 발송해요.)'; return; }
+    if (out) out.textContent = '📅 주간 리포트를 만드는 중이에요… 잠시만요.';
+    storage.weeklyRun()
+      .then((r) => {
+        if (!out) return;
+        if (r && r.sent) out.textContent = `✅ 주간 리포트 완료! (${r.count || 0}명 분석)\n${r.delivered ? '설정된 알림 채널(웹훅)으로 보냈어요.' : '서버에 저장했어요. 알림으로 받으려면 서버에 WEEKLY_WEBHOOK을 설정하세요.'}`;
+        else if (r && r.error) out.textContent = '오류: ' + r.error;
+        else out.textContent = '서버 응답을 받지 못했어요.';
+      })
+      .catch((code) => {
+        if (!out) return;
+        out.textContent = (code === 404) ? '🤖 NAS 서버를 최신으로 업데이트해 주세요.\n(server.js 교체 후 컨테이너 재시작)' : 'NAS 서버에 연결하지 못했어요. 주소·토큰·서버 실행을 확인해 주세요.';
+      });
   }
 
   hideAllModals() {
