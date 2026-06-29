@@ -326,10 +326,10 @@ export class Game {
   // 약할수록(에너지↓) 잘 잡히고, 레벨 높거나 전설이면 확 떨어진다.
   catchChance(enemy) {
     const weak = 1 - enemy.energy / enemy.maxEnergy;        // 0(만땅)~1(기절)
-    let chance = 0.35 + weak * 0.55;                         // 기절 시 0.9
-    chance *= Math.max(0.4, 1 - (enemy.lv || 1) * 0.02);     // 고레벨 페널티
-    if (enemy.isLegendary) chance *= 0.4;                    // 전설은 매우 낮음
-    return Math.max(0.08, Math.min(0.95, chance));
+    let chance = 0.18 + weak * 0.42;                         // 기절 시 0.6 (이전 0.9 → 더 어렵게)
+    chance *= Math.max(0.3, 1 - (enemy.lv || 1) * 0.025);    // 고레벨 페널티 강화
+    if (enemy.isLegendary) chance *= 0.3;                    // 전설은 훨씬 낮음
+    return Math.max(0.04, Math.min(0.85, chance));
   }
 
   evolvableOwned() {
@@ -357,14 +357,30 @@ export class Game {
     const stage = this.engine.state.current || 0;
     const maxStage = Math.max(1, this.engine.skillsCount() - 1);
     const lv = isLegendary ? Math.round(maxStage * 1.5) + 8 : 3 + stage * 2 + Math.floor(Math.random() * 3);
-    const maxEnergy = Math.round(def.catchEnergy * (1 + lv * 0.04)); // 고레벨일수록 튼튼
-    this.enemy = { def, energy: maxEnergy, maxEnergy, isLegendary, lv };
+
+    // 체력을 '잡기까지 필요한 정답(공격) 횟수' 기준으로 만든다 → 격차가 커도 무한정 풀지 않게.
+    // (내 포켓몬의 1회 평균 공격력 × 목표 횟수). 격차가 크면 목표 횟수가 조금 더 늘어 더 단단해진다.
+    const o = this.activeOwned();
+    const myLv = o ? o.lv : 1;
+    const lvFactor = Math.max(0.6, Math.min(1.7, 1 + (myLv - lv) * 0.05));
+    const formMult = (o && o.form ? (o.form === 'gmax' ? 1.7 : 1.4) : 1) * (o && o.tera ? 1.4 : 1);
+    const avgDmg = 22 * lvFactor * formMult;                          // 상성 보통(×1) 가정한 평균 공격력
+    const gap = Math.max(0, lv - myLv);
+    const baseHits = graduation ? 7 : isLegendary ? 6 : (def.stage || 1) >= 3 ? 5 : 4;
+    const targetHits = baseHits + Math.min(4, Math.floor(gap / 4));   // 레벨 격차가 클수록 조금 더 단단
+    const maxEnergy = Math.max(40, Math.round(avgDmg * targetHits));
+    // 질문(퀴즈) 한도: 정답 목표 + 오답/상성 여유. 다 쓰면 야생이 도망간다.
+    const maxTurns = Math.round(targetHits * 1.5) + (graduation ? 4 : isLegendary ? 3 : 2);
+    const maxThrows = isLegendary ? 2 : 3;                            // 포획 시도(공) 가능 횟수
+
+    this.enemy = { def, energy: maxEnergy, maxEnergy, isLegendary, lv, graduation, turnsLeft: maxTurns, maxTurns, throwsLeft: maxThrows, maxThrows };
     this.scene.spawnEnemy(def);
     $('enemy-name').textContent = `${def.name} Lv.${lv}`;
     const badge = $('enemy-type');
     badge.textContent = C.typeLabel(def.type);
     badge.style.background = C.typeColor(def.type);
     this.setEnemyEnergy();
+    this.setEnemyTurns();
     $('catch-btn').classList.add('hidden');
     this.state.dexSeen[def.id] = true;
 
@@ -870,6 +886,8 @@ export class Game {
     }
     // 포획 대기 중이면 멈춤(포획 처리 → betweenBattle에서 진화)
     if (this.enemy && this.enemy.energy <= 0) { this.locked = true; return; }
+    // 야생의 인내심: 정해진 퀴즈 수가 지나면 도망간다(너무 강한 상대를 무한정 풀지 않게)
+    if (this._consumeTurn()) return;
     // 진급했으면 진화 기회 먼저, 아니면 다음 문제
     const delay = promoted ? 2200 : 700;
     setTimeout(() => {
@@ -877,12 +895,43 @@ export class Game {
     }, delay);
   }
 
+  // 질문 한도를 1 줄이고, 다 떨어지면 야생을 도망시킨다(도망시켰으면 true).
+  _consumeTurn() {
+    if (!this.enemy || this.inExam || this.pendingExam) return false;
+    this.enemy.turnsLeft = (this.enemy.turnsLeft || 0) - 1;
+    this.setEnemyTurns();
+    if (this.enemy.turnsLeft <= 0) { this.enemyFlees(); return true; }
+    if (this.enemy.turnsLeft <= 2) this.showMessage(`⚠️ ${this.enemy.def.name}이(가) 곧 도망가려 해요! (남은 기회 ${this.enemy.turnsLeft})`, '#ffb14a', 1300);
+    return false;
+  }
+
+  // 야생이 도망 → 연출 후 다음 배틀로. 전설이면 "더 강해진 뒤 다시" 안내.
+  enemyFlees() {
+    this.locked = true;
+    disarmThrow();
+    $('catch-btn').classList.add('hidden');
+    $('transform-btn').classList.add('hidden');
+    sfx.escape();
+    const nm = this.enemy ? this.enemy.def.name : '야생 포켓몬';
+    const wasLegend = this.enemy && this.enemy.isLegendary;
+    this.showMessage(`💨 ${nm}이(가) 도망쳤다!`, '#9fb3e0', 1800);
+    this.scene.fleeEnemy(() => {
+      setTimeout(() => {
+        if (wasLegend) this.showMessage('더 강해진 뒤에 다시 도전하자! 💪', '#7fe3e0', 1700);
+        this.betweenBattle();
+      }, 300);
+    });
+  }
+
   // 포획 기회 등장: 버튼 표시 + (가능하면) 자이로 던지기 모션 대기
   showCatch() {
     const btn = $('catch-btn');
     btn.classList.remove('hidden');
+    if (this.enemy && this.enemy.throwsLeft == null) this.enemy.throwsLeft = this.enemy.maxThrows || 3;
+    const left = this.enemy ? this.enemy.throwsLeft : 3;
     const motion = hasMotion();
-    btn.textContent = motion ? '📱 폰을 휙 던져! (또는 누르기)' : '⚪ 포켓볼 던지기!';
+    const base = motion ? '📱 폰을 휙 던져!' : '⚪ 포켓볼 던지기!';
+    btn.textContent = `${base} (남은 공 ${left})`;
     if (motion) armThrow(() => { this.showMessage('📱 휙! 던졌다!', '#ffd23f', 800); this.throwBall(); });
   }
 
@@ -904,8 +953,15 @@ export class Game {
           this.onCaught();
         } else {
           sfx.escape();
-          this.showMessage('아쉽! 튀어나왔다! 다시 던져보자!', '#ff7a9c', 1400);
-          setTimeout(() => this.showCatch(), 1300); // 재도전 허용
+          this.enemy.throwsLeft = (this.enemy.throwsLeft || 1) - 1;
+          if (this.enemy.throwsLeft <= 0) {
+            // 공이 다 떨어지면 야생이 도망간다
+            this.showMessage('아쉽! 더 던질 공이 없어요…', '#ff7a9c', 1500);
+            setTimeout(() => this.enemyFlees(), 1200);
+          } else {
+            this.showMessage(`아쉽! 튀어나왔다! (남은 공 ${this.enemy.throwsLeft})`, '#ff7a9c', 1400);
+            setTimeout(() => this.showCatch(), 1300); // 남은 공이 있으면 재도전
+          }
         }
       },
       success,
@@ -1314,6 +1370,14 @@ export class Game {
   setEnemyEnergy() {
     const pct = this.enemy ? (this.enemy.energy / this.enemy.maxEnergy) * 100 : 0;
     $('enemy-energy').style.width = pct + '%';
+  }
+
+  // 남은 퀴즈 기회 표시(0에 가까우면 빨갛게 깜빡).
+  setEnemyTurns() {
+    const el = $('enemy-turns'); if (!el) return;
+    if (!this.enemy || this.enemy.turnsLeft == null) { el.textContent = ''; el.classList.remove('low'); return; }
+    el.textContent = `⏳ ${this.enemy.turnsLeft}`;
+    el.classList.toggle('low', this.enemy.turnsLeft <= 2);
   }
   setAllyHP() { $('ally-hp').style.width = this.allyHP + '%'; }
 

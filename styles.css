@@ -61,6 +61,11 @@ body {
 .xp { height: 100%; width: 0%; background: linear-gradient(90deg, #3b9eff, #9fe0ff); transition: width .4s; }
 .xp-label { display: inline-block; margin-top: 2px; font-size: 10px; font-weight: 700 !important; color: #9fc6ff; letter-spacing: 1px; }
 .type-badge { display: inline-block; margin-top: 6px; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 10px; background: var(--normal); color: #1a1a1a; }
+/* 남은 퀴즈 기회(야생이 도망가기까지) */
+.turns-badge:empty { display: none; }
+.turns-badge { display: inline-block; margin-top: 6px; margin-left: 8px; font-size: 12px; font-weight: 800; padding: 2px 9px; border-radius: 10px; background: rgba(255,255,255,.18); color: #ffd23f; }
+.turns-badge.low { background: #ff5d6c; color: #fff; animation: turn-pulse .7s ease-in-out infinite; }
+@keyframes turn-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.14); } }
 
 /* 메시지 배너 */
 #message-banner {
