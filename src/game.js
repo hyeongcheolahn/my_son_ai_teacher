@@ -52,7 +52,9 @@ export class Game {
     // 시작 시 이미 충족된 누적 업적은 조용히 채워 둔다(토스트 없이).
     checkAchievements(this.state, {});
     this.updateCollectionBadge();
-    storage.save(this.state);
+    // 아직 아무것도 안 한 '열기만 한' 단계 → 이 기기에만 저장(서버로 올리지 않음).
+    // 실제 학습이 시작되면 storage.save()가 서버에도 올린다.
+    storage.saveLocal(this.state);
   }
 
   // 하루 1회: 연속 학습(streak) 갱신. 어제 놀았으면 +1, 아니면 1로 리셋.

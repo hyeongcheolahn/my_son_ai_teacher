@@ -252,6 +252,8 @@ body {
 .nav-row { display: flex; gap: 8px; margin-top: 14px; }
 .nav-full { width: 100%; margin-top: 8px; }
 .app-ver { opacity: .4; font-size: 11px; text-align: center; margin-top: 12px; }
+.recover-link { text-align: center; margin-top: 10px; }
+.recover-link a { color: #9fb3e0; font-size: 13px; }
 
 /* 배움(개념 미니레슨 / 틀렸을 때 가르치기) */
 .modal-box.teach { max-width: 460px; }

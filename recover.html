@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>세이브 복구 도구 — 수학 포켓 배틀</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+         background: #0b1020; color: #fff; padding: 18px; padding-bottom: 60px; line-height: 1.5; }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  .sub { font-size: 14px; opacity: .75; margin-bottom: 20px; }
+  h2 { font-size: 17px; margin: 24px 0 10px; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,.15); }
+  .card { background: rgba(255,255,255,.07); border: 2px solid rgba(255,255,255,.12); border-radius: 14px;
+          padding: 14px; margin-bottom: 12px; }
+  .card.orphan { border-color: #ffb14a; }
+  .card.active { border-color: #36d36e; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 9px; margin-left: 6px; }
+  .tag.orphan { background: #ffb14a; color: #3a2400; }
+  .tag.active { background: #36d36e; color: #06351a; }
+  .tag.empty  { background: #6b7794; color: #fff; }
+  .ttl { font-size: 16px; font-weight: 800; }
+  .meta { font-size: 13px; opacity: .8; margin-top: 8px; white-space: pre-wrap; }
+  .kid { font-size: 11px; opacity: .45; margin-top: 6px; word-break: break-all; }
+  button { font-size: 15px; font-weight: 800; padding: 12px 16px; border: none; border-radius: 12px;
+           cursor: pointer; color: #fff; background: #2e3a63; margin-top: 10px; }
+  button:active { transform: translateY(2px); }
+  button.go { background: linear-gradient(180deg, #45c46a, #2c9a4e); width: 100%; }
+  button.warn { background: linear-gradient(180deg, #ff8a3a, #d9671d); }
+  button.full { width: 100%; }
+  .note { font-size: 13px; opacity: .72; margin-top: 8px; }
+  .ok { color: #7fe3a0; font-weight: 700; }
+  .bad { color: #ff9a8a; font-weight: 700; }
+  a { color: #7fc8ff; }
+  #msg { position: sticky; top: 0; z-index: 5; }
+  #msg div { background: #1f7a44; border-radius: 12px; padding: 12px; margin-bottom: 12px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🛟 세이브 복구 도구</h1>
+  <p class="sub">이 브라우저에 저장된 학습 데이터를 모두 찾아서 보여줍니다.<br>
+  게임이 초기화된 것처럼 보여도, 데이터는 대부분 여기 남아 있어요.</p>
+
+  <div id="msg"></div>
+
+  <h2>1단계 · 먼저 백업하기</h2>
+  <div class="card">
+    <p class="note">아무 작업 전에 백업 파일을 먼저 내려받아 두세요. 가장 안전합니다.</p>
+    <button class="full warn" id="backup">💾 전체 백업 파일 내려받기</button>
+  </div>
+
+  <h2>2단계 · 발견된 데이터</h2>
+  <div id="out"></div>
+
+  <h2>3단계 · 동기화 상태</h2>
+  <div id="sync"></div>
+
+  <p class="note" style="margin-top:24px">
+    복원 후에는 <a href="./">게임으로 돌아가기</a> → 프로필 화면에서 해당 친구를 고르세요.
+  </p>
+</div>
+
+<script>
+const PROFILES_KEY = 'pocket-math-profiles-v1';
+const SAVE_PREFIX  = 'pocket-math-save-v2::';
+const LEGACY_SAVE  = 'pocket-math-save-v2';
+const SUB = { math:'수학', korean:'한글', english:'영어', hanja:'한자', science:'과학', random:'랜덤' };
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function readProfiles() {
+  try { return JSON.parse(localStorage.getItem(PROFILES_KEY)) || { profiles: [], activeId: null }; }
+  catch { return { profiles: [], activeId: null }; }
+}
+function writeProfiles(p) { localStorage.setItem(PROFILES_KEY, JSON.stringify(p)); localStorage.setItem(PROFILES_KEY + '::u', String(Date.now())); }
+
+// 게임 관련 세이브 키 모두 찾기(updatedAt 보조키는 제외)
+function findSaveKeys() {
+  const out = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (!k) continue;
+    if (k.endsWith('::u')) continue;
+    if (k === LEGACY_SAVE || k.startsWith(SAVE_PREFIX)) out.push(k);
+  }
+  return out;
+}
+
+function summarize(data) {
+  if (!data || typeof data !== 'object') return { empty: true, lines: ['(내용을 읽을 수 없어요)'] };
+  const owned = Array.isArray(data.owned) ? data.owned : [];
+  const dex = Object.keys(data.dexSeen || {}).length;
+  const tc = data.totalCorrect || 0, tw = data.totalWrong || 0;
+  const subs = Object.entries(data.subjects || {}).map(([k, v]) =>
+    `${SUB[k] || k} ${(v && v.current != null ? v.current + 1 : 1)}단계`).join(' · ');
+  const best = owned.reduce((m, o) => Math.max(m, o.lv || 1), 0);
+  const stickers = Object.values(data.stickers || {}).reduce((a, c) => a + c, 0);
+  const achv = Object.keys(data.achievements || {}).length;
+  const empty = owned.length === 0 && tc === 0 && dex === 0;
+  const lines = [
+    `보유 포켓몬 ${owned.length}마리${best ? ` (최고 Lv.${best})` : ''}`,
+    `정답 ${tc} · 오답 ${tw} · 도감 ${dex}종`,
+    subs ? `진도: ${subs}` : '진도: 없음',
+  ];
+  if (achv || stickers) lines.push(`업적 ${achv}개 · 스티커 ${stickers}장`);
+  return { empty, lines, score: owned.length * 10 + tc };
+}
+
+function toast(text, bad) {
+  $('msg').innerHTML = `<div style="background:${bad ? '#8a2733' : '#1f7a44'}">${esc(text)}</div>`;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function render() {
+  const pj = readProfiles();
+  const profiles = Array.isArray(pj.profiles) ? pj.profiles : [];
+  const byId = Object.fromEntries(profiles.map(p => [p.id, p]));
+  const keys = findSaveKeys();
+  const out = $('out');
+
+  if (!keys.length) {
+    out.innerHTML = `<div class="card"><p class="bad">이 브라우저에서 저장된 세이브를 찾지 못했어요.</p>
+      <p class="note">확인해 볼 것:<br>
+      • 아이가 쓰던 <b>같은 기기 · 같은 브라우저</b>인가요? (사파리/크롬 다름, 시크릿 모드는 저장 안 됨)<br>
+      • 브라우저 설정에서 쿠키/사이트 데이터를 지우지 않았나요?<br>
+      • NAS 동기화를 쓰셨다면, 게임의 부모 보기에서 서버 주소·토큰을 다시 넣으면 서버에서 받아옵니다.</p></div>`;
+  } else {
+    const rows = keys.map(k => {
+      const id = k === LEGACY_SAVE ? null : k.slice(SAVE_PREFIX.length);
+      let data = null;
+      try { data = JSON.parse(localStorage.getItem(k)); } catch {}
+      const u = +localStorage.getItem(k + '::u') || 0;
+      return { k, id, data, u, prof: id ? byId[id] : null, s: summarize(data) };
+    }).sort((a, b) => (b.s.score || 0) - (a.s.score || 0));
+
+    out.innerHTML = rows.map((r, i) => {
+      const isActive = r.id && r.id === pj.activeId;
+      const orphan = !r.prof;
+      const cls = r.s.empty ? '' : isActive ? 'active' : orphan ? 'orphan' : '';
+      const name = r.prof ? esc(r.prof.avatar + ' ' + r.prof.name)
+                 : (r.k === LEGACY_SAVE ? '📦 아주 예전 세이브(프로필 도입 전)' : '❓ 주인 없는 세이브');
+      let tag = '';
+      if (r.s.empty) tag = '<span class="tag empty">비어 있음</span>';
+      else if (isActive) tag = '<span class="tag active">현재 사용 중</span>';
+      else if (orphan) tag = '<span class="tag orphan">연결 끊김 — 복원 가능</span>';
+      const when = r.u ? new Date(r.u).toLocaleString('ko-KR') : '기록 없음';
+      return `<div class="card ${cls}">
+        <div class="ttl">${name}${tag}</div>
+        <div class="meta">${r.s.lines.map(esc).join('\n')}\n마지막 저장: ${esc(when)}</div>
+        <div class="kid">${esc(r.k)}</div>
+        ${r.s.empty ? '' : `<button class="go" data-i="${i}">▶ 이 데이터로 플레이하기</button>`}
+      </div>`;
+    }).join('');
+
+    out.querySelectorAll('button[data-i]').forEach(btn => {
+      btn.onclick = () => restore(rows[+btn.dataset.i]);
+    });
+  }
+
+  // 프로필인데 세이브가 없는 경우 안내
+  const haveSave = new Set(keys.map(k => k === LEGACY_SAVE ? null : k.slice(SAVE_PREFIX.length)));
+  const missing = profiles.filter(p => !haveSave.has(p.id));
+  if (missing.length) {
+    out.innerHTML += `<div class="card"><p class="note">※ 프로필은 있지만 세이브가 없는 친구: ${
+      missing.map(p => esc(p.avatar + ' ' + p.name)).join(', ')} — 아직 한 번도 저장되지 않았거나, 다른 기기에 있어요.</p></div>`;
+  }
+
+  renderSync();
+}
+
+// 선택한 세이브를 '현재 사용 중'으로 되돌린다.
+function restore(r) {
+  const pj = readProfiles();
+  pj.profiles = Array.isArray(pj.profiles) ? pj.profiles : [];
+
+  let targetId = r.id;
+  if (!targetId) {
+    // 아주 예전(프로필 없음) 세이브 → 새 프로필을 만들어 옮긴다
+    const nm = prompt('이 데이터를 쓸 친구 이름을 적어 주세요', '친구');
+    if (nm === null) return;
+    targetId = 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1000);
+    pj.profiles.push({ id: targetId, name: (nm || '친구').slice(0, 12), avatar: '🦊' });
+    localStorage.setItem(SAVE_PREFIX + targetId, JSON.stringify(r.data));
+  } else if (!r.prof) {
+    // 세이브는 있는데 프로필 목록에서 사라진 경우 → 프로필을 되살린다
+    const nm = prompt('프로필 정보가 사라졌어요. 친구 이름을 적어 주세요', '친구');
+    if (nm === null) return;
+    pj.profiles.push({ id: targetId, name: (nm || '친구').slice(0, 12), avatar: '🦊' });
+  }
+
+  pj.activeId = targetId;
+  writeProfiles(pj);
+  // 저장 시각을 '지금'으로 올려, NAS의 옛 데이터가 이걸 덮어쓰지 못하게 보호
+  localStorage.setItem(SAVE_PREFIX + targetId + '::u', String(Date.now()));
+
+  toast('복원했어요! 게임으로 돌아가 이 친구를 고르면 이어서 할 수 있어요.');
+  render();
+}
+
+function renderSync() {
+  const url = localStorage.getItem('sync_url') || '';
+  const box = $('sync');
+  if (!url) {
+    box.innerHTML = `<div class="card"><p class="note">NAS 동기화 <b>꺼져 있음</b> — 데이터는 이 브라우저에만 저장됩니다.
+      그래서 다른 기기/브라우저에서는 진행도가 보이지 않아요.</p></div>`;
+    return;
+  }
+  box.innerHTML = `<div class="card">
+    <p class="note">NAS 동기화 <b class="ok">켜져 있음</b><br>서버: ${esc(url)}</p>
+    <p class="note">⚠️ 서버에 더 최근 시각으로 기록된 데이터가 있으면, 게임을 열 때 이 기기 데이터를 덮어쓸 수 있어요.
+      방금 복원했다면 아래로 동기화를 잠시 꺼 두고 게임을 확인한 뒤, 부모 보기에서 다시 켜는 것이 안전합니다.</p>
+    <button class="warn full" id="syncoff">⏸ 동기화 잠시 끄기 (주소는 아래에 적어두세요)</button>
+  </div>`;
+  $('syncoff').onclick = () => {
+    if (!confirm('동기화를 끌까요?\n서버 주소: ' + url + '\n\n(나중에 게임의 부모 보기 → NAS 동기화 설정에서 다시 넣을 수 있어요)')) return;
+    localStorage.removeItem('sync_url');
+    toast('동기화를 껐어요. 서버 주소: ' + url);
+    renderSync();
+  };
+}
+
+$('backup').onclick = () => {
+  const dump = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k) dump[k] = localStorage.getItem(k);
+  }
+  const blob = new Blob([JSON.stringify({ savedAt: new Date().toISOString(), data: dump }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `포켓배틀-백업-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  toast('백업 파일을 내려받았어요. 안전한 곳에 보관해 주세요.');
+};
+
+render();
+</script>
+</body>
+</html>
