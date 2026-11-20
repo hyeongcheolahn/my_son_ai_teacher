@@ -39,6 +39,13 @@ const ALLOW_ORIGIN = cfg('ALLOW_ORIGIN', '*');
 const TTS_KEY = cfg('ELEVENLABS_API_KEY', '');
 const TTS_VOICE = cfg('ELEVENLABS_VOICE_ID', '21m00Tcm4TlvDq8ikWAM'); // 기본 Rachel(원하는 한국어 음성 ID로 바꾸세요)
 const TTS_MODEL = cfg('ELEVENLABS_MODEL', 'eleven_multilingual_v2');
+// 주간 리포트 자동 발송 — Claude로 한 주를 요약해 웹훅(디스코드/슬랙/커스텀)으로 보낸다.
+//   WEEKLY_WEBHOOK : 받을 주소(디스코드/슬랙 Incoming Webhook URL 등). 비우면 발송 없이 서버에 저장만.
+//   WEEKLY_DAYS    : 분석/발송 주기(일, 기본 7)
+const WEEKLY_WEBHOOK = cfg('WEEKLY_WEBHOOK', '');
+const WEEKLY_DAYS = Math.max(1, parseInt(cfg('WEEKLY_DAYS', '7'), 10) || 7);
+const WEEKLY_MS = WEEKLY_DAYS * 864e5;
+const SUB_LABEL = { math: '수학', korean: '한글', english: '영어', hanja: '한자', science: '과학', random: '랜덤' };
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const TTS_DIR = path.join(DATA_DIR, 'tts');
@@ -138,6 +145,85 @@ async function makeTts(text, voice) {
   } catch (e) { return { status: 502, error: '음성 생성 실패: ' + e.message }; }
 }
 
+// ---- 주간 리포트 ------------------------------------------------------------
+// 저장된 세이브(state)의 문제 로그로 '이번 주' 학습을 분석한다(클라이언트 analytics와 별개의 가벼운 버전).
+function serverAnalysis(state, days) {
+  const now = Date.now();
+  const since = now - days * 864e5;
+  const log = Array.isArray(state.log) ? state.log.filter((e) => e && typeof e.t === 'number') : [];
+  const week = log.filter((e) => e.t >= since);
+  const prev = log.filter((e) => e.t >= since - days * 864e5 && e.t < since);
+  const acc = (arr) => (arr.length ? Math.round((arr.filter((e) => e.correct).length / arr.length) * 100) : 0);
+
+  const bySub = {};
+  for (const e of week) { const s = e.subject || e.subjectTag || '기타'; (bySub[s] = bySub[s] || []).push(e); }
+  const 과목별 = Object.entries(bySub).map(([s, arr]) => ({ 과목: SUB_LABEL[s] || s, 문제수: arr.length, 정답률: acc(arr) }));
+
+  const bySkill = {};
+  for (const e of week) { if (!e.skillId) continue; (bySkill[e.skillId] = bySkill[e.skillId] || []).push(e); }
+  const 취약단원 = Object.entries(bySkill)
+    .filter(([, arr]) => arr.length >= 4 && acc(arr) < 70)
+    .map(([id, arr]) => ({ 단원: id, 정답률: acc(arr), 문제수: arr.length }))
+    .sort((a, b) => a.정답률 - b.정답률).slice(0, 5);
+
+  const 공부한날 = new Set(week.map((e) => new Date(e.t).toISOString().slice(0, 10))).size;
+  return {
+    이번주: { 문제수: week.length, 정답률: acc(week), 공부한날 },
+    지난주: { 문제수: prev.length, 정답률: acc(prev) },
+    과목별, 취약단원,
+    누적: { 정답: state.totalCorrect || 0, 오답: state.totalWrong || 0, 보유포켓몬: (state.owned || []).length, 연속학습일: state.streak || 0 },
+  };
+}
+
+async function makeWeeklyReport(name, analysis) {
+  if (!API_KEY) return { error: 'ANTHROPIC_API_KEY 미설정' };
+  const sys = `당신은 다정한 초등 저학년 담임 선생님입니다. 학부모에게 '지난 한 주' 아이의 학습을 짧고 따뜻한 한국어로 요약해 주세요.
+규칙: (1) 이번 주에 얼마나/꾸준히 했는지 칭찬 먼저 (2) 지난주 대비 좋아진 점이나 잘한 과목 (3) 더 연습하면 좋은 단원 1~2가지 (4) 집에서 해볼 짧은 팁 1~2가지. 부드러운 존댓말, 이모지 약간, 5~8문장. 데이터가 적으면 격려 위주로.`;
+  const user = `아이 이름: ${name || '아이'}\n분석 주기: 최근 ${WEEKLY_DAYS}일\n데이터(JSON):\n${JSON.stringify(analysis)}\n\n이 데이터를 바탕으로 주간 리포트를 작성해줘.`;
+  try {
+    const out = await callClaude(sys, user, 1500);
+    return out.error ? out : { report: out.text };
+  } catch (e) { return { error: '주간 리포트 생성 실패: ' + e.message }; }
+}
+
+async function postWebhook(text) {
+  if (!WEEKLY_WEBHOOK) return false;
+  try {
+    // content: 디스코드 / text: 슬랙 — 둘 다 넣어 어느 쪽이든 동작하게.
+    const r = await fetch(WEEKLY_WEBHOOK, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: '학습 리포트', content: String(text).slice(0, 1900), text: String(text).slice(0, 3500) }),
+    });
+    return r.ok;
+  } catch { return false; }
+}
+
+// 모든 프로필을 분석→리포트→(웹훅 발송)+서버 저장. 이번 주 활동이 없는 프로필은 건너뜀.
+async function runWeekly() {
+  const pj = readJson(fileFor('profiles.json'), { profiles: [] });
+  const profiles = Array.isArray(pj.profiles) ? pj.profiles : [];
+  const reports = [];
+  for (const p of profiles) {
+    const save = readJson(fileFor(`save-${safeId(p.id)}.json`), null);
+    const state = save && save.data;
+    if (!state) continue;
+    const analysis = serverAnalysis(state, WEEKLY_DAYS);
+    if ((analysis.이번주.문제수 || 0) === 0) continue;
+    const out = await makeWeeklyReport(p.name, analysis);
+    const report = out.report || `(${out.error || '리포트 생성 실패'})`;
+    const rec = { name: p.name, report, analysis, at: Date.now() };
+    writeJson(fileFor(`weekly-${safeId(p.id)}.json`), rec);
+    reports.push({ id: p.id, ...rec });
+  }
+  let delivered = false;
+  if (reports.length && WEEKLY_WEBHOOK) {
+    const body = reports.map((r) => `📅 ${r.name} · 주간 학습 리포트\n${r.report}`).join('\n\n────────\n\n');
+    delivered = await postWebhook(body);
+  }
+  writeJson(fileFor('weekly-state.json'), { lastRun: Date.now() });
+  return { count: reports.length, delivered };
+}
+
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { cors(res); res.writeHead(204); return res.end(); }
   const url = new URL(req.url, 'http://x');
@@ -182,6 +268,18 @@ const server = http.createServer(async (req, res) => {
     return send(res, out.error ? 502 : 200, out);
   }
 
+  // 주간 리포트 지금 보내기(앱의 '지금 보내기' 버튼)
+  if (p === '/api/weekly/run' && req.method === 'POST') {
+    if (!API_KEY) return send(res, 502, { error: 'NAS 서버에 ANTHROPIC_API_KEY가 설정되지 않았어요.' });
+    try { const out = await runWeekly(); return send(res, 200, { sent: true, count: out.count, delivered: out.delivered }); }
+    catch (e) { return send(res, 502, { error: '주간 리포트 실패: ' + e.message }); }
+  }
+  // 저장된 주간 리포트 조회(선택)
+  if (p === '/api/weekly' && req.method === 'GET') {
+    const id = safeId(url.searchParams.get('id'));
+    return send(res, 200, readJson(fileFor(`weekly-${id}.json`), null) || { report: null });
+  }
+
   // 읽어주기(자연스러운 음성) — mp3 반환
   if (p === '/api/tts' && req.method === 'POST') {
     const b = await body(req);
@@ -198,8 +296,26 @@ const server = http.createServer(async (req, res) => {
   send(res, 404, { error: 'not found' });
 });
 
+// 주간 리포트 자동 발송: 6시간마다 '마지막 발송 후 WEEKLY_DAYS일이 지났는지' 확인해 자동 실행.
+function scheduleWeekly() {
+  if (!API_KEY) return; // 분석엔 Claude 키 필요
+  const tick = async () => {
+    try {
+      const st = readJson(fileFor('weekly-state.json'), { lastRun: 0 });
+      if (Date.now() - (st.lastRun || 0) >= WEEKLY_MS) {
+        const out = await runWeekly();
+        console.log(`[주간리포트] 자동 실행 — ${out.count}명 분석, 발송 ${out.delivered ? 'OK' : '없음/실패'}`);
+      }
+    } catch (e) { console.log('[주간리포트] 오류:', e.message); }
+  };
+  setInterval(tick, 6 * 3600 * 1000);
+  setTimeout(tick, 30 * 1000); // 시작 30초 뒤 1회 점검
+}
+
 server.listen(PORT, () => {
   console.log(`[학습서버] 포트 ${PORT}, 데이터 ${DATA_DIR}, 모델 ${MODEL}`);
   console.log(`  AI 선생님: ${API_KEY ? 'ON' : 'OFF(키 없음)'} · 음성(ElevenLabs): ${TTS_KEY ? 'ON' : 'OFF(키 없음)'}`);
+  console.log(`  주간 리포트: ${API_KEY ? `ON(${WEEKLY_DAYS}일 주기)` : 'OFF(키 없음)'} · 발송: ${WEEKLY_WEBHOOK ? '웹훅 설정됨' : '미설정(서버 저장만)'}`);
   if (!APP_TOKEN) console.log('  ⚠️ APP_TOKEN 미설정 → 누구나 접근 가능(집 안 전용이 아니면 꼭 설정하세요)');
+  scheduleWeekly();
 });

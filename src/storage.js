@@ -18,6 +18,10 @@ const DEFAULT = () => ({
   totalWrong: 0,
   review: [],                  // [{ key, text, answer, choices, skillId, subject }] — 오답 복습 목록
   log: [],                     // [{ t, subject, skillId, correct, ms, kind }] — 문제별 기록(분석용)
+  achievements: {},            // { achId: 달성시각(ms) } — 업적(배지)
+  stickers: {},                // { stickerId: 개수 } — 스티커 앨범
+  streak: 0,                   // 연속 학습 일수
+  lastPlayDay: null,           // 마지막으로 논 날(YYYY-MM-DD)
 });
 
 // ---- 프로필 관리 ----------------------------------------------------------
@@ -187,6 +191,8 @@ export function caps() { return _caps; }
 export function testSync() { return api('GET', '/api/health').then((h) => { if (h) _caps = h; return h; }); }
 export function aiReport(name, analysis) { return api('POST', '/api/report', { name, analysis }); }
 export function aiExplain(payload) { return api('POST', '/api/explain', payload); }
+// 주간 리포트 지금 보내기(서버가 Claude로 분석 후 설정된 웹훅으로 발송)
+export function weeklyRun() { return api('POST', '/api/weekly/run', {}); }
 
 // 자연스러운 음성(mp3) 받아오기 → 재생용 Object URL 반환(없으면 null → 브라우저 음성으로 대체)
 export async function ttsAudioUrl(text) {

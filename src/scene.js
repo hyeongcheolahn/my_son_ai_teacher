@@ -524,6 +524,19 @@ export class BattleScene {
     if (this.enemy) { this.scene.remove(this.enemy); this.enemy = null; }
   }
 
+  // 도망 연출: 적이 옆으로 깡총깡총 뛰며 사라진다 → 제거 후 콜백.
+  fleeEnemy(done) {
+    const g = this.enemy;
+    if (!g) { done && done(); return; }
+    const baseX = g.position.x, baseY = g.position.y;
+    this.effects.push(this._tween(0.75, (p) => {
+      g.position.x = baseX + p * 7;                                  // 화면 밖으로 이동
+      g.position.y = baseY + Math.abs(Math.sin(p * Math.PI * 4)) * 0.45; // 깡총깡총
+      g.rotation.y = 0.6 + p * 2.0;
+      g.traverse((o) => { if (o.isMesh && o.material) { o.material.transparent = true; o.material.opacity = Math.max(0, 1 - p * 1.2); } });
+    }, () => { this.removeEnemy(); done && done(); }));
+  }
+
   // 진화 연출: 현재 아군이 빛나며 정지 → 새 형태로 교체 → 등장 연출.
   evolveAlly(newDef, done) {
     const old = this.ally;
