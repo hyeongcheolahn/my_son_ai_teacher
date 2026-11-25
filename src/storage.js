@@ -102,9 +102,26 @@ export function load() {
 }
 
 let _pushT = null;
-export function save(state) {
+// 서버에서 한 번이라도 성공적으로 받아왔는지 — true가 되기 전에는 서버로 올리지 않는다.
+let _pullOk = false;
+export function pullOk() { return _pullOk; }
+
+// 이 기기에만 저장(서버로 올리지 않음).
+// 게임을 '열기만' 한 단계에서 서버를 건드리지 않게 하려고 쓴다 —
+// 서버 데이터를 이 기기의 (오래된) 데이터로 덮어쓰는 사고를 막는다.
+export function saveLocal(state) {
   try { localStorage.setItem(saveKey(), JSON.stringify(state)); setLocalU(saveKey(), Date.now()); } catch {}
-  if (syncOn()) { clearTimeout(_pushT); const id = activeProfileId(); _pushT = setTimeout(() => pushSaveId(id, state, localU(SAVE_PREFIX + id)), 1200); }
+}
+
+export function save(state) {
+  saveLocal(state);
+  // ⚠️ 서버에서 한 번이라도 '성공적으로 받아온 뒤'에만 올린다.
+  // (받아오기가 실패한 상태에서 올리면, 다른 기기의 최신 진도를 날릴 수 있다)
+  if (syncOn() && _pullOk) {
+    clearTimeout(_pushT);
+    const id = activeProfileId();
+    _pushT = setTimeout(() => pushSaveId(id, state, localU(SAVE_PREFIX + id)), 1200);
+  }
 }
 
 // 학습 진도만 초기화. 보유 포켓몬·레벨·도감은 그대로 유지한다.
@@ -163,6 +180,7 @@ export async function pullAll() {
   if (!syncOn()) return;
   try {
     const sp = await api('GET', '/api/profiles');
+    _pullOk = true; // 서버와 통신 성공 → 이제부터 올리기 허용
     if (sp && sp.profiles && sp.profiles.length && (sp.updatedAt || 0) > localU(PROFILES_KEY)) {
       localStorage.setItem(PROFILES_KEY, JSON.stringify({ profiles: sp.profiles, activeId: sp.activeId }));
       setLocalU(PROFILES_KEY, sp.updatedAt);

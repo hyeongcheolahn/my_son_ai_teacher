@@ -83,6 +83,7 @@ export function chooseProfile() {
               <div class="nm">새 친구</div>
             </div>
           </div>
+          <a class="link" href="recover.html" style="display:inline-block">🛟 백업·복구 도구</a>
         </div>`;
       overlay.querySelectorAll('.pf-card[data-id]').forEach((el) => {
         el.addEventListener('click', (e) => {
@@ -115,6 +116,7 @@ export function chooseProfile() {
           <div class="av-grid">${avCells}</div>
           <button class="big-btn" id="pf-start" disabled>시작! 🚀</button>
           ${first ? '' : '<button class="link" id="pf-back">← 뒤로</button>'}
+          ${first ? '<a class="link" href="recover.html" style="display:inline-block">🛟 예전 진행도가 사라졌나요? 백업 불러오기</a>' : ''}
         </div>`;
       const nameEl = overlay.querySelector('#pf-name');
       const startBtn = overlay.querySelector('#pf-start');
