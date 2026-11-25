@@ -252,6 +252,11 @@ body {
 .nav-row { display: flex; gap: 8px; margin-top: 14px; }
 .nav-full { width: 100%; margin-top: 8px; }
 .app-ver { opacity: .4; font-size: 11px; text-align: center; margin-top: 12px; }
+/* 아이폰 사파리 데이터 삭제 위험 안내(시작 화면) */
+.ios-tip { margin-top: 18px; text-align: left; font-size: 14px; line-height: 1.6;
+  background: rgba(255,177,74,.12); border: 2px solid rgba(255,177,74,.6); border-radius: 14px; padding: 12px 14px; }
+.ios-tip b:first-child { display: block; color: #ffd27a; margin-bottom: 4px; font-size: 15px; }
+.ios-tip-sub { margin-top: 6px; font-size: 12px; opacity: .75; }
 .recover-link { text-align: center; margin-top: 10px; }
 .recover-link a { color: #9fb3e0; font-size: 13px; }
 

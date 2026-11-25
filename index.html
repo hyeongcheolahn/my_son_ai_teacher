@@ -4,6 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>수학 포켓 배틀</title>
+  <!-- 홈 화면 앱(설치형): 아이폰 사파리가 오래 안 쓴 사이트의 데이터를 지우는 것을 피하는 가장 확실한 방법 -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="포켓배틀" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <meta name="theme-color" content="#0b1020" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
   <link rel="stylesheet" href="styles.css" />
   <script type="importmap">
   {
@@ -165,8 +173,8 @@
         </div>
 
         <button id="reset-btn" class="reset-btn">진행도 초기화</button>
-        <div class="recover-link"><a href="recover.html">🛟 세이브 복구 도구 (진행도가 사라졌을 때)</a></div>
-        <div class="app-ver">버전 2026-06-29 · v19 (야생 도망·포획 횟수 제한·포획률 하향)</div>
+        <div class="recover-link"><a href="recover.html">🛟 백업·복구 도구 (백업 받기 / 사라진 진행도 찾기)</a></div>
+        <div class="app-ver">버전 2026-11-25 · v20 (세이브 보호·백업/복구·홈 화면 앱)</div>
         <button class="close-btn" data-close="parent-modal">닫기</button>
       </div>
     </div>
@@ -232,6 +240,13 @@
         <h1>⚡ 수학 포켓 배틀 ⚡</h1>
         <p>문제를 맞히면 공격! 야생 포켓을 잡아보자!</p>
         <button id="start-btn" class="big-action">모험 시작!</button>
+        <!-- 아이폰 사파리(홈 화면 앱 아님)일 때만 보임: 데이터 삭제 위험 안내 -->
+        <div id="ios-tip" class="ios-tip hidden">
+          <b>📱 부모님께: 진행도를 지키려면 꼭 설치해 주세요</b>
+          아이폰 사파리는 한동안 안 쓴 사이트의 저장 데이터를 지울 수 있어요.<br>
+          사파리 아래 <b>공유 버튼(⬆️)</b> → <b>'홈 화면에 추가'</b> → 앞으로는 <b>홈 화면 아이콘</b>으로 열어 주세요.
+          <div class="ios-tip-sub">※ 홈 화면 앱은 사파리와 저장 공간이 따로예요. 설치 후엔 아이콘으로만 열어야 진행도가 이어져요.</div>
+        </div>
       </div>
     </div>
   </div>

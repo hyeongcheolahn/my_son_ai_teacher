@@ -45,10 +45,19 @@
 
   <div id="msg"></div>
 
-  <h2>1단계 · 먼저 백업하기</h2>
+  <div id="iostip" class="card orphan" style="display:none">
+    <p class="note" style="opacity:1"><b>📱 아이폰 사파리 사용 중</b><br>
+    사파리는 한동안 안 쓴 사이트의 저장 데이터를 지울 수 있어요. 게임은 사파리 공유 버튼(⬆️) →
+    <b>'홈 화면에 추가'</b> 후 <b>홈 화면 아이콘</b>으로 열어 주세요. 그리고 아래 백업을 가끔 받아 두세요.</p>
+  </div>
+
+  <h2>1단계 · 백업하기 / 불러오기</h2>
   <div class="card">
-    <p class="note">아무 작업 전에 백업 파일을 먼저 내려받아 두세요. 가장 안전합니다.</p>
+    <p class="note">작업 전에 백업 파일을 먼저 내려받아 두세요. 가장 안전합니다.<br>
+    파일은 '파일' 앱이나 iCloud Drive에 저장돼요. 일주일에 한 번쯤 받아 두면 든든해요.</p>
     <button class="full warn" id="backup">💾 전체 백업 파일 내려받기</button>
+    <button class="full" id="importbtn">📂 백업 파일 불러오기</button>
+    <input type="file" id="importfile" accept=".json,application/json" style="display:none" />
   </div>
 
   <h2>2단계 · 발견된 데이터</h2>
@@ -229,12 +238,82 @@ $('backup').onclick = () => {
     if (k) dump[k] = localStorage.getItem(k);
   }
   const blob = new Blob([JSON.stringify({ savedAt: new Date().toISOString(), data: dump }, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `포켓배틀-백업-${new Date().toISOString().slice(0, 10)}.json`;
+  a.href = url;
+  a.download = `pokebattle-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.style.display = 'none';
+  document.body.appendChild(a); // 문서에 붙여야 파일 이름이 지켜지는 브라우저가 있음
   a.click();
-  toast('백업 파일을 내려받았어요. 안전한 곳에 보관해 주세요.');
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 1500);
+  toast('백업 파일을 내려받았어요. (아이폰: 파일 앱 → 다운로드 폴더) 안전한 곳에 보관해 주세요.');
 };
+
+// ---- 백업 불러오기 ----------------------------------------------------
+// 원칙: 지금 있는 데이터를 함부로 지우지 않는다.
+//  · 세이브: 이 브라우저에 없으면 가져오고, 둘 다 있으면 '진도가 더 많은 쪽'을 남긴다.
+//  · 프로필: 합친다(id 기준). 설정값(동기화/잠금해제/소리)은 비어 있을 때만 채운다.
+const SETTING_KEYS = ['sync_url', 'sync_token', 'mpb_unlocked', 'sfx_muted'];
+function progressOf(raw) {
+  try { const d = JSON.parse(raw); return (d.totalCorrect || 0) + (Array.isArray(d.owned) ? d.owned.length * 10 : 0); }
+  catch { return -1; }
+}
+
+$('importbtn').onclick = () => $('importfile').click();
+$('importfile').onchange = async (e) => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  let obj;
+  try { obj = JSON.parse(await f.text()); } catch { toast('백업 파일을 읽을 수 없어요. 이 도구로 받은 .json 파일인지 확인해 주세요.', true); return; }
+  const data = obj && obj.data;
+  if (!data || typeof data !== 'object') { toast('올바른 백업 파일이 아니에요.', true); return; }
+
+  const saveKeys = Object.keys(data).filter(k => !k.endsWith('::u') && (k === LEGACY_SAVE || k.startsWith(SAVE_PREFIX)));
+  let bp = null; try { bp = JSON.parse(data[PROFILES_KEY] || 'null'); } catch {}
+  const bprofiles = (bp && Array.isArray(bp.profiles)) ? bp.profiles : [];
+  if (!saveKeys.length && !bprofiles.length) { toast('이 백업 파일에는 게임 데이터가 없어요.', true); return; }
+
+  const when = obj.savedAt ? new Date(obj.savedAt).toLocaleString('ko-KR') : '날짜 모름';
+  if (!confirm(`백업(${when})을 불러올까요?\n세이브 ${saveKeys.length}개 · 프로필 ${bprofiles.length}명\n\n지금 이 브라우저의 데이터는 지우지 않고 합쳐요.\n(같은 친구 데이터가 양쪽에 있으면 진도가 더 많은 쪽을 남겨요)`)) return;
+
+  const now = String(Date.now());
+  let added = 0, replaced = 0, kept = 0;
+  for (const k of saveKeys) {
+    const incoming = String(data[k]);
+    const cur = localStorage.getItem(k);
+    if (cur == null) { localStorage.setItem(k, incoming); added++; }
+    else if (progressOf(incoming) > progressOf(cur)) { localStorage.setItem(k, incoming); replaced++; }
+    else { kept++; continue; }
+    localStorage.setItem(k + '::u', now); // NAS의 옛 데이터가 덮어쓰지 못하게 보호
+  }
+
+  // 프로필 합치기 + '가장 진도 많은' 친구를 현재 사용 중으로
+  const pj = readProfiles();
+  pj.profiles = Array.isArray(pj.profiles) ? pj.profiles : [];
+  const have = new Set(pj.profiles.map(p => p.id));
+  for (const p of bprofiles) if (p && p.id && !have.has(p.id)) { pj.profiles.push(p); have.add(p.id); }
+  let best = null, bestScore = -1;
+  for (const p of pj.profiles) {
+    const sc = progressOf(localStorage.getItem(SAVE_PREFIX + p.id) || 'null');
+    if (sc > bestScore) { bestScore = sc; best = p.id; }
+  }
+  if (best) pj.activeId = best;
+  writeProfiles(pj);
+
+  for (const k of SETTING_KEYS) if (data[k] != null && localStorage.getItem(k) == null) localStorage.setItem(k, String(data[k]));
+
+  toast(`불러왔어요! 새로 ${added}개 · 교체 ${replaced}개 · 유지 ${kept}개. 게임으로 돌아가 친구를 고르세요.`);
+  render();
+};
+
+// 아이폰 사파리(홈 화면 앱 아님)면 안내 표시
+(function () {
+  const ua = navigator.userAgent || '';
+  const ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  if (ios && !standalone) $('iostip').style.display = '';
+})();
 
 render();
 </script>
